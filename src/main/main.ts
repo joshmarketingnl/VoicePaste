@@ -106,6 +106,20 @@ const SETTINGS_HOTKEY_LABELS: Record<SettingsHotkeyKey, string> = {
   stopAndTranscribe: 'Stop and transcribe hotkey',
   showControlWindow: 'Show window hotkey',
 };
+const WINDOWS_LEGACY_DEFAULT_HOTKEYS: HotkeysConfig = {
+  toggleRecord: 'Control+Alt+R',
+  pasteTranscript: 'Control+Alt+V',
+  cancelRecording: 'Control+Alt+S',
+  stopAndTranscribe: 'Control+Alt+C',
+  showControlWindow: 'Control+Alt+M',
+};
+const WINDOWS_DEFAULT_HOTKEY_FALLBACKS: Record<SettingsHotkeyKey, string[]> = {
+  toggleRecord: ['Control+Alt+Shift+R'],
+  pasteTranscript: ['Control+Alt+Shift+V'],
+  cancelRecording: ['Control+Alt+Shift+S'],
+  stopAndTranscribe: ['Control+Alt+Shift+C'],
+  showControlWindow: ['Control+Alt+Shift+M'],
+};
 
 let mainWindow: BrowserWindow | null = null;
 let cursorIndicatorWindow: BrowserWindow | null = null;
@@ -1390,26 +1404,81 @@ interface HotkeyRegistrationResult {
   cancelKey: string;
   stopAndTranscribeKey: string;
   showControlWindowKey: string;
+  hotkeys: HotkeysConfig;
+  usedFallback: boolean;
+}
+
+function getWindowsDefaultHotkeyFallbacks(hotkeyKey: SettingsHotkeyKey, configuredKey: string): string[] {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const normalizedConfigured = normalizeHotkey(configuredKey).toLowerCase();
+  const legacyDefault = normalizeHotkey(WINDOWS_LEGACY_DEFAULT_HOTKEYS[hotkeyKey]).toLowerCase();
+  if (normalizedConfigured !== legacyDefault) {
+    return [];
+  }
+
+  return WINDOWS_DEFAULT_HOTKEY_FALLBACKS[hotkeyKey];
+}
+
+function registerHotkeyWithFallback(
+  hotkeyKey: SettingsHotkeyKey,
+  configuredKey: string,
+  callback: () => void,
+): { ok: boolean; key: string; usedFallback: boolean } {
+  const primaryKey = normalizeHotkey(configuredKey);
+  const candidateKeys = [
+    primaryKey,
+    ...getWindowsDefaultHotkeyFallbacks(hotkeyKey, primaryKey).map((fallbackKey) => normalizeHotkey(fallbackKey)),
+  ];
+
+  for (const [index, candidateKey] of candidateKeys.entries()) {
+    if (globalShortcut.register(candidateKey, callback)) {
+      return {
+        ok: true,
+        key: candidateKey,
+        usedFallback: index > 0,
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    key: primaryKey,
+    usedFallback: false,
+  };
 }
 
 function registerHotkeysForConfig(targetConfig: AppConfig): HotkeyRegistrationResult {
-  const toggleKey = normalizeHotkey(targetConfig.hotkeys.toggleRecord);
-  const pasteKey = normalizeHotkey(targetConfig.hotkeys.pasteTranscript);
-  const cancelKey = normalizeHotkey(targetConfig.hotkeys.cancelRecording);
-  const stopAndTranscribeKey = normalizeHotkey(targetConfig.hotkeys.stopAndTranscribe);
-  const showControlWindowKey = normalizeHotkey(targetConfig.hotkeys.showControlWindow);
-
-  const toggleOk = globalShortcut.register(toggleKey, handleToggleRecording);
-  const pasteOk = globalShortcut.register(pasteKey, handlePasteHotkey);
-  const cancelOk = globalShortcut.register(cancelKey, handleCancelRecording);
-  const stopAndTranscribeOk = globalShortcut.register(stopAndTranscribeKey, () => {
+  const toggleResult = registerHotkeyWithFallback('toggleRecord', targetConfig.hotkeys.toggleRecord, handleToggleRecording);
+  const pasteResult = registerHotkeyWithFallback('pasteTranscript', targetConfig.hotkeys.pasteTranscript, handlePasteHotkey);
+  const cancelResult = registerHotkeyWithFallback('cancelRecording', targetConfig.hotkeys.cancelRecording, handleCancelRecording);
+  const stopAndTranscribeResult = registerHotkeyWithFallback('stopAndTranscribe', targetConfig.hotkeys.stopAndTranscribe, () => {
     handleStopAndTranscribe('secondaryHotkey');
   });
-  const showControlWindowOk = globalShortcut.register(showControlWindowKey, () => {
+  const showControlWindowResult = registerHotkeyWithFallback('showControlWindow', targetConfig.hotkeys.showControlWindow, () => {
     handleShowControlWindow('hotkey-show-control-window');
   });
 
+  const toggleOk = toggleResult.ok;
+  const pasteOk = pasteResult.ok;
+  const cancelOk = cancelResult.ok;
+  const stopAndTranscribeOk = stopAndTranscribeResult.ok;
+  const showControlWindowOk = showControlWindowResult.ok;
+  const toggleKey = toggleResult.key;
+  const pasteKey = pasteResult.key;
+  const cancelKey = cancelResult.key;
+  const stopAndTranscribeKey = stopAndTranscribeResult.key;
+  const showControlWindowKey = showControlWindowResult.key;
   const allOk = toggleOk && pasteOk && cancelOk && stopAndTranscribeOk && showControlWindowOk;
+  const usedFallback =
+    toggleResult.usedFallback ||
+    pasteResult.usedFallback ||
+    cancelResult.usedFallback ||
+    stopAndTranscribeResult.usedFallback ||
+    showControlWindowResult.usedFallback;
+
   return {
     allOk,
     toggleOk,
@@ -1422,6 +1491,14 @@ function registerHotkeysForConfig(targetConfig: AppConfig): HotkeyRegistrationRe
     cancelKey,
     stopAndTranscribeKey,
     showControlWindowKey,
+    hotkeys: {
+      toggleRecord: toggleKey,
+      pasteTranscript: pasteKey,
+      cancelRecording: cancelKey,
+      stopAndTranscribe: stopAndTranscribeKey,
+      showControlWindow: showControlWindowKey,
+    },
+    usedFallback,
   };
 }
 
@@ -1440,10 +1517,31 @@ function logHotkeyRegistrationFailure(message: string, result: HotkeyRegistratio
   });
 }
 
+function persistHotkeyFallbacks(result: HotkeyRegistrationResult) {
+  if (!result.usedFallback) {
+    return;
+  }
+
+  config = {
+    ...config,
+    hotkeys: result.hotkeys,
+  };
+
+  try {
+    saveConfig(configPath, config);
+    logger.info('Persisted fallback hotkeys after registration conflicts', {
+      hotkeys: result.hotkeys,
+    });
+  } catch (error) {
+    logger.error('Failed to persist fallback hotkeys', { error: String(error) });
+  }
+}
+
 function registerHotkeysOrFail() {
   globalShortcut.unregisterAll();
   const result = registerHotkeysForConfig(config);
   if (result.allOk) {
+    persistHotkeyFallbacks(result);
     logger.info('Global hotkeys registered', {
       toggleKey: result.toggleKey,
       pasteKey: result.pasteKey,
@@ -1465,6 +1563,7 @@ function rebindHotkeysAfterSettingsSave(previousConfig: AppConfig): string | nul
   globalShortcut.unregisterAll();
   const result = registerHotkeysForConfig(config);
   if (result.allOk) {
+    persistHotkeyFallbacks(result);
     logger.info('Global hotkeys rebound after settings save', {
       toggleKey: result.toggleKey,
       pasteKey: result.pasteKey,

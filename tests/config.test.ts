@@ -9,9 +9,9 @@ describe('defaultConfigForPlatform', () => {
     expect(macConfig.hotkeys.showControlWindow).toBe('Command+Option+M');
 
     const winConfig = defaultConfigForPlatform('win32');
-    expect(winConfig.hotkeys.cancelRecording).toBe('Ctrl+Alt+S');
-    expect(winConfig.hotkeys.stopAndTranscribe).toBe('Ctrl+Alt+C');
-    expect(winConfig.hotkeys.showControlWindow).toBe('Ctrl+Alt+M');
+    expect(winConfig.hotkeys.cancelRecording).toBe('Ctrl+Alt+Shift+S');
+    expect(winConfig.hotkeys.stopAndTranscribe).toBe('Ctrl+Alt+Shift+C');
+    expect(winConfig.hotkeys.showControlWindow).toBe('Ctrl+Alt+Shift+M');
   });
 
   it('defaults indicator to showAlways', () => {

@@ -24,11 +24,11 @@ const DEFAULT_HOTKEYS_BY_PLATFORM: Record<
     showControlWindow: 'Command+Option+M',
   },
   win32: {
-    toggleRecord: 'Ctrl+Alt+R',
-    pasteTranscript: 'Ctrl+Alt+V',
-    cancelRecording: 'Ctrl+Alt+S',
-    stopAndTranscribe: 'Ctrl+Alt+C',
-    showControlWindow: 'Ctrl+Alt+M',
+    toggleRecord: 'Ctrl+Alt+Shift+R',
+    pasteTranscript: 'Ctrl+Alt+Shift+V',
+    cancelRecording: 'Ctrl+Alt+Shift+S',
+    stopAndTranscribe: 'Ctrl+Alt+Shift+C',
+    showControlWindow: 'Ctrl+Alt+Shift+M',
   },
   linux: {
     toggleRecord: 'Ctrl+Alt+R',
