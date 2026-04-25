@@ -1,0 +1,193 @@
+:root {
+  --indicator-size: 32px;
+  --text-soft: rgba(243, 232, 205, 0.9);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+#indicator {
+  width: var(--indicator-size);
+  height: var(--indicator-size);
+  border-radius: 999px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(150% 150% at 52% 46%, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0) 62%),
+    linear-gradient(156deg, #0a0b0d 0%, #07090b 62%, #090b0d 100%);
+  transition: background 170ms ease;
+}
+
+#indicator::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.recording-mark,
+.spinner,
+.icon {
+  display: none;
+}
+
+.recording-mark {
+  width: calc(var(--indicator-size) * 0.64);
+  height: calc(var(--indicator-size) * 0.64);
+  position: relative;
+}
+
+.recording-ring,
+.recording-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+
+.recording-ring {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(251, 191, 36, 0.44);
+  opacity: 0.45;
+  animation: ring-pulse 1.08s ease-in-out infinite;
+}
+
+.recording-core {
+  width: calc(var(--indicator-size) * 0.2);
+  height: calc(var(--indicator-size) * 0.2);
+  background: rgba(251, 191, 36, 0.96);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.28);
+  animation: core-breathe 0.94s ease-in-out infinite;
+}
+
+.spinner {
+  width: calc(var(--indicator-size) * 0.54);
+  height: calc(var(--indicator-size) * 0.54);
+  border-radius: 999px;
+  border: max(1.5px, calc(var(--indicator-size) * 0.078)) solid rgba(72, 164, 228, 0.22);
+  border-top-color: rgba(179, 220, 252, 0.69);
+  animation: spin 1.05s linear infinite;
+}
+
+.icon {
+  width: calc(var(--indicator-size) * 0.54);
+  height: calc(var(--indicator-size) * 0.54);
+}
+
+.icon path {
+  fill: none;
+  stroke: var(--text-soft);
+  stroke-width: 2.05;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#indicator[data-state='recording'] {
+  background:
+    radial-gradient(150% 150% at 50% 46%, rgba(251, 191, 36, 0.16), rgba(251, 191, 36, 0) 62%),
+    linear-gradient(156deg, #0b0c0e 0%, #08090b 62%, #0a0b0d 100%);
+}
+
+#indicator[data-state='recording'] .recording-mark {
+  display: block;
+}
+
+#indicator[data-state='transcribing'] {
+  background:
+    radial-gradient(150% 150% at 50% 46%, rgba(56, 189, 248, 0.15), rgba(56, 189, 248, 0) 62%),
+    linear-gradient(156deg, #0a0c0f 0%, #07090d 62%, #090c11 100%);
+}
+
+#indicator[data-state='transcribing'] .spinner {
+  display: block;
+}
+
+#indicator[data-state='ready'] {
+  background:
+    radial-gradient(150% 150% at 46% 46%, rgba(251, 191, 36, 0.18), rgba(251, 191, 36, 0) 62%),
+    radial-gradient(130% 130% at 86% 46%, rgba(56, 189, 248, 0.04), rgba(56, 189, 248, 0) 64%),
+    linear-gradient(156deg, #0d0d0a 0%, #0a0a08 62%, #0b0b09 100%);
+}
+
+#indicator[data-state='ready'] .icon-check {
+  display: block;
+  animation: icon-pop 170ms ease-out;
+}
+
+#indicator[data-state='error'] {
+  background:
+    radial-gradient(145% 145% at 42% 46%, rgba(244, 104, 111, 0.17), rgba(244, 104, 111, 0) 62%),
+    linear-gradient(156deg, #110d0f 0%, #0d0a0c 62%, #0f0c0f 100%);
+}
+
+#indicator[data-state='error'] .icon-error {
+  display: block;
+  animation: icon-pop 150ms ease-out;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes icon-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ring-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0.3;
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.03);
+    opacity: 0.56;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0.3;
+  }
+}
+
+@keyframes core-breathe {
+  0% {
+    transform: translate(-50%, -50%) scale(0.95);
+    opacity: 0.9;
+  }
+  55% {
+    transform: translate(-50%, -50%) scale(1.09);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.95);
+    opacity: 0.9;
+  }
+}

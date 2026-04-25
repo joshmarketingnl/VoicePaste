@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoicePaste Cursor Indicator</title>
+    <link rel="stylesheet" href="cursor-indicator.css" />
+  </head>
+  <body>
+    <div id="indicator" data-state="recording" aria-hidden="true">
+      <div class="recording-mark" aria-hidden="true">
+        <span class="recording-ring"></span>
+        <span class="recording-core"></span>
+      </div>
+      <div class="spinner" aria-hidden="true"></div>
+      <svg class="icon icon-check" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 12.5L10.2 16.2L17.5 8.9" />
+      </svg>
+      <svg class="icon icon-error" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 8L16 16M16 8L8 16" />
+      </svg>
+    </div>
+    <script src="cursor-indicator.js"></script>
+  </body>
+</html>

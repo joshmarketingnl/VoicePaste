@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoicePaste</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="container" data-state="idle">
+      <div class="header">
+        <div class="dot" aria-hidden="true"></div>
+        <div class="title">VoicePaste</div>
+        <div class="controls">
+          <button id="hideButton" class="control-button" type="button" aria-label="Hide indicator">
+            <span class="icon-hide" aria-hidden="true"></span>
+          </button>
+          <button id="restartButton" class="control-button" type="button" aria-label="Restart app">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M20 5v5h-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M20 10a8 8 0 1 1-2.3-5.7L20 5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <button id="settingsButton" class="control-button" type="button" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M19.5 13a7.7 7.7 0 0 0 0-2l1.9-1.4-1.6-2.8-2.2.7a8 8 0 0 0-1.5-.9L15.8 4h-3.6l-.3 2.4a8 8 0 0 0-1.5.9l-2.2-.7-1.6 2.8L8.5 11a7.7 7.7 0 0 0 0 2l-1.9 1.4 1.6 2.8 2.2-.7a8 8 0 0 0 1.5.9l.3 2.4h3.6l.3-2.4a8 8 0 0 0 1.5-.9l2.2.7 1.6-2.8-1.9-1.4Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle cx="12" cy="12" r="2.7" fill="none" stroke="currentColor" stroke-width="1.6" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="state-row">
+        <div id="stateText" class="state-text">Idle</div>
+        <div id="timerText" class="timer">00:00</div>
+      </div>
+      <div class="status-row">
+        <div id="statusText" class="status-text">Idle</div>
+        <div id="spinner" class="spinner" aria-hidden="true"></div>
+      </div>
+      <div id="previewText" class="preview-text"></div>
+      <div class="action-row">
+        <button
+          id="recordActionButton"
+          class="action-button"
+          data-mode="play"
+          type="button"
+          aria-label="Record action"
+        >
+          <span class="record-icon record-icon-play" aria-hidden="true"></span>
+          <span class="record-icon record-icon-stop" aria-hidden="true"></span>
+          <span id="recordActionLabel" class="action-label">Record</span>
+        </button>
+        <button
+          id="copyButton"
+          class="action-button action-button-copy"
+          type="button"
+          aria-label="Copy transcript to clipboard"
+        >
+          <span class="copy-icon" aria-hidden="true"></span>
+          <span id="copyActionLabel" class="action-label">Copy</span>
+        </button>
+      </div>
+      <div id="settingsPanel" class="settings-panel" hidden>
+        <div class="settings-header">
+          <div id="settingsTitleText" class="settings-title">Settings</div>
+          <div class="settings-header-actions">
+            <div class="settings-language-switch" role="group" aria-label="UI language">
+              <button id="languageNlButton" class="settings-language-button" type="button" aria-label="Dutch">
+                <svg viewBox="0 0 18 12" aria-hidden="true">
+                  <rect width="18" height="4" fill="#ae1c28" />
+                  <rect y="4" width="18" height="4" fill="#ffffff" />
+                  <rect y="8" width="18" height="4" fill="#21468b" />
+                </svg>
+              </button>
+              <button id="languageEnButton" class="settings-language-button" type="button" aria-label="English">
+                <svg viewBox="0 0 18 12" aria-hidden="true">
+                  <rect width="18" height="12" fill="#012169" />
+                  <path d="M0 0l18 12M18 0 0 12" stroke="#fff" stroke-width="2.5" />
+                  <path d="M0 0l18 12M18 0 0 12" stroke="#c8102e" stroke-width="1.2" />
+                  <path d="M9 0v12M0 6h18" stroke="#fff" stroke-width="4" />
+                  <path d="M9 0v12M0 6h18" stroke="#c8102e" stroke-width="2.2" />
+                </svg>
+              </button>
+            </div>
+            <button id="closeSettingsButton" class="settings-close-button" type="button" aria-label="Close settings">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path
+                  d="M5 5l10 10M15 5 5 15"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span id="recordHotkeyLabel" class="settings-label">Record hotkey</span>
+          <div class="settings-inline">
+            <div id="toggleHotkeyValue" class="hotkey-value">-</div>
+            <button
+              id="resetToggleHotkeyButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset record hotkey"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button id="captureToggleHotkeyButton" class="settings-secondary-button" type="button">Set</button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span id="pasteHotkeyLabel" class="settings-label">Paste hotkey</span>
+          <div class="settings-inline">
+            <div id="pasteHotkeyValue" class="hotkey-value">-</div>
+            <button
+              id="resetPasteHotkeyButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset paste hotkey"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button id="capturePasteHotkeyButton" class="settings-secondary-button" type="button">Set</button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span id="cancelHotkeyLabel" class="settings-label">Cancel hotkey</span>
+          <div class="settings-inline">
+            <div id="cancelHotkeyValue" class="hotkey-value">-</div>
+            <button
+              id="resetCancelHotkeyButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset cancel hotkey"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button id="captureCancelHotkeyButton" class="settings-secondary-button" type="button">Set</button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span id="stopAndTranscribeHotkeyLabel" class="settings-label">Stop + transcribe hotkey</span>
+          <div class="settings-inline">
+            <div id="stopAndTranscribeHotkeyValue" class="hotkey-value">-</div>
+            <button
+              id="resetStopAndTranscribeHotkeyButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset stop and transcribe hotkey"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button id="captureStopAndTranscribeHotkeyButton" class="settings-secondary-button" type="button">
+              Set
+            </button>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span id="showControlWindowHotkeyLabel" class="settings-label">Show window hotkey</span>
+          <div class="settings-inline">
+            <div id="showControlWindowHotkeyValue" class="hotkey-value">-</div>
+            <button
+              id="resetShowControlWindowHotkeyButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset show window hotkey"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button id="captureShowControlWindowHotkeyButton" class="settings-secondary-button" type="button">
+              Set
+            </button>
+          </div>
+        </div>
+        <label class="settings-field" for="apiKeyInput">
+          <div class="settings-label-row">
+            <span id="apiKeyLabel" class="settings-label">OpenAI API key</span>
+            <button
+              id="apiKeyHelpButton"
+              class="settings-help-button"
+              type="button"
+              aria-label="Where to get an OpenAI API key"
+              title="Open help page"
+            >
+              <span aria-hidden="true">?</span>
+            </button>
+          </div>
+          <input
+            id="apiKeyInput"
+            class="settings-input"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="sk-..."
+          />
+        </label>
+        <label id="developerProviderField" class="settings-field" for="providerCodeInput" hidden>
+          <span id="providerCodeLabel" class="settings-label">Provider code</span>
+          <div class="settings-inline">
+            <input
+              id="providerCodeInput"
+              class="settings-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Provider code"
+            />
+            <button
+              id="resetProviderCodeButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset provider code"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </label>
+        <label id="developerModelField" class="settings-field" for="modelCodeInput" hidden>
+          <span id="modelCodeLabel" class="settings-label">Model code</span>
+          <div class="settings-inline">
+            <input
+              id="modelCodeInput"
+              class="settings-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Model code"
+            />
+            <button
+              id="resetModelCodeButton"
+              class="settings-icon-button"
+              type="button"
+              aria-label="Reset model code"
+              title="Reset"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 5a7 7 0 1 1-6.3 4H3l3.4-3.6L9.8 9H7.6a5.5 5.5 0 1 0 1.6-2.6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </label>
+        <div id="developerToolsRow" class="settings-dev-tools" hidden>
+          <button id="openLogsButton" class="settings-secondary-button" type="button">Open Logs</button>
+        </div>
+        <div id="settingsCaptureHint" class="settings-hint"></div>
+        <div id="settingsStatusText" class="settings-status" role="status"></div>
+        <div class="settings-actions">
+          <div class="settings-actions-dev">
+            <span id="developerModeLabel" class="settings-label">Developer mode</span>
+            <label class="settings-toggle" for="developerModeInput" aria-label="Developer mode">
+              <input id="developerModeInput" type="checkbox" />
+              <span class="settings-toggle-track" aria-hidden="true"></span>
+            </label>
+          </div>
+          <span class="settings-spacer" aria-hidden="true"></span>
+          <button id="cancelSettingsButton" class="settings-secondary-button" type="button">Cancel</button>
+          <button id="saveSettingsButton" class="settings-primary-button" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>

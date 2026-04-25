@@ -1,0 +1,60 @@
+{
+  "name": "voicepaste-developer-beta-v1.1",
+  "version": "1.1.0-beta.1",
+  "private": true,
+  "description": "Local hotkey recording + transcription + paste utility.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "clean": "rimraf dist",
+    "build": "npm run clean && npm run build:main && npm run build:renderer && node scripts/copy-static.js",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "node scripts/build-renderer.js",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run",
+    "package:mac": "npm run build && electron-builder --mac zip",
+    "package:win": "npm run build && electron-builder --win nsis zip --x64",
+    "package:win:arm64": "npm run build && electron-builder --win nsis zip --arm64",
+    "package:win:all": "npm run build && electron-builder --win nsis zip --x64 --arm64"
+  },
+  "dependencies": {
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  },
+  "build": {
+    "appId": "com.voicepaste.developerbeta.v11",
+    "productName": "Developer beta V1.1",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "src/main/assets/trayWin.ico",
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "asar": true
+  }
+}
