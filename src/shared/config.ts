@@ -57,7 +57,8 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
 export function isLocalProvider(provider: string): boolean {
   try {
     const url = new URL(provider);
-    return ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+    const hostname = url.hostname.replace(/^\[|\]$/g, '');
+    return ['localhost', '127.0.0.1', '::1'].includes(hostname);
   } catch {
     return false;
   }

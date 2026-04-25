@@ -8,7 +8,7 @@ VoicePaste is an Electron app with a small always-on-top indicator UI. The main 
   - Global hotkeys (start/stop, paste)
   - Tray/menu
   - State machine + logging
-  - OpenAI transcription (SDK)
+  - OpenAI-compatible transcription (OpenAI cloud or local loopback provider via SDK)
   - Clipboard + paste automation (macOS/Windows)
   - Config loading and validation
 - Renderer process:
@@ -38,7 +38,8 @@ States: `idle` -> `recording` -> `transcribing` -> `ready` or `error`. Errors ca
 - Renderer requests main to write each segment to a temp folder; ordered paths are sent back for transcription.
 
 ## Transcription
-- Main reads segments and calls OpenAI Audio Transcriptions API.
+- Main reads segments and calls an OpenAI-compatible Audio Transcriptions API.
+- Remote providers require `OPENAI_API_KEY` or a stored `apiKey`; loopback providers on `localhost`, `127.0.0.1`, or `[::1]` can run without a user API key.
 - Retries for transient errors (429/5xx) with backoff.
 - Segment transcripts are joined with whitespace normalization.
 
