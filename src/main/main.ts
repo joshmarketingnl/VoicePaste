@@ -115,7 +115,6 @@ let configPath = '';
 let logger: Logger;
 let stateMachine: StateMachine;
 let lastTranscript: string | null = null;
-let lastError: string | null = null;
 let activeTranscriptionJobs = 0;
 let indicatorHiddenByUser = false;
 let hasShownOnLaunch = false;
@@ -138,7 +137,7 @@ let pasteQueuedAfterTranscription = false;
 let trayRetryTimer: NodeJS.Timeout | null = null;
 let activeTranscriptionJobId = 0;
 const cancelledTranscriptionJobIds = new Set<number>();
-const launchHidden = process.argv.includes(WINDOWS_LAUNCH_HIDDEN_ARG);
+const launchHidden = process.argv.includes(WINDOWS_LAUNCH_HIDDEN_ARG) || process.platform === 'win32';
 
 const sessionDirs = new Map<string, string>();
 
@@ -451,6 +450,17 @@ function scheduleAutoRestart(reason: string) {
   }, AUTO_RESTART_DELAY_MS);
 }
 
+function reportRecoverableError(reason: string, message: string, details?: Record<string, unknown>) {
+  clearQueuedPaste(`recoverable-error:${reason}`);
+  stateMachine.transition('error', reason);
+  logger.error('Recoverable error reported without auto-restart', {
+    reason,
+    message,
+    ...details,
+  });
+  sendStateUpdate('error', message);
+}
+
 function getMainWindowSize() {
   if (!mainWindow) {
     return {
@@ -544,19 +554,25 @@ function handleShowControlWindow(reason: string) {
     }
     return;
   }
-  showIndicator(reason);
+  showIndicator(reason, { focus: true });
 }
 
-function showIndicator(reason: string) {
+function showIndicator(reason: string, options: { focus?: boolean } = {}) {
   if (!mainWindow) {
     return;
   }
   indicatorHiddenByUser = false;
   positionMainWindow();
   if (!mainWindow.isVisible()) {
-    mainWindow.show();
+    if (options.focus) {
+      mainWindow.show();
+    } else {
+      mainWindow.showInactive();
+    }
   }
-  mainWindow.focus();
+  if (options.focus) {
+    mainWindow.focus();
+  }
   updateTrayMenu();
   logger.info('Indicator shown', { reason });
 }
@@ -930,7 +946,7 @@ function updateIndicatorVisibility(state: AppState) {
     if (launchHidden) {
       hideIndicator('launch-hidden');
     } else {
-      showIndicator('launch');
+      showIndicator('launch', { focus: false });
     }
     return;
   }
@@ -1174,7 +1190,7 @@ function createCursorIndicatorWindow(): BrowserWindow | null {
     backgroundColor: useTransparentWindow ? '#00000000' : '#050607',
     hasShadow: false,
     resizable: false,
-    focusable: process.platform === 'win32',
+    focusable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
@@ -1338,10 +1354,7 @@ function handlePasteHotkey() {
 
 async function handlePaste() {
   if (!lastTranscript) {
-    stateMachine.transition('error', 'Paste requested with no transcript');
-    lastError = 'Nothing to paste yet.';
-    sendStateUpdate('error', lastError);
-    scheduleAutoRestart('paste-requested-without-transcript');
+    reportRecoverableError('paste-requested-without-transcript', 'Nothing to paste yet.');
     return;
   }
 
@@ -1361,11 +1374,7 @@ async function handlePaste() {
         ? 'Enable Accessibility and Automation permissions for VoicePaste.'
         : 'Check permissions for simulated paste.';
     const message = `Paste failed. ${permissionHint} ${fallback}`;
-    lastError = message;
-    stateMachine.transition('error', 'Paste failed');
-    logger.error('Paste failed', { error: String(error) });
-    sendStateUpdate('error', message);
-    scheduleAutoRestart('paste-failed');
+    reportRecoverableError('paste-failed', message, { error: String(error) });
   }
 }
 
@@ -1449,7 +1458,6 @@ function registerHotkeysOrFail() {
   logHotkeyRegistrationFailure(message, result);
   stateMachine.transition('error', message);
   sendStateUpdate('error', message);
-  scheduleAutoRestart('hotkey-registration-failed');
   return false;
 }
 
@@ -1481,8 +1489,7 @@ function rebindHotkeysAfterSettingsSave(previousConfig: AppConfig): string | nul
   logHotkeyRegistrationFailure('Failed to restore previous hotkeys after rollback', rollbackResult);
   stateMachine.transition('error', 'Hotkey rollback failed.');
   sendStateUpdate('error', 'Hotkey rollback failed.');
-  scheduleAutoRestart('hotkey-rollback-failed');
-  return 'Failed to apply or restore hotkeys. App restart scheduled.';
+  return 'Failed to apply or restore hotkeys. Restart VoicePaste after choosing different hotkeys.';
 }
 
 function setupTray(attempt = 1) {
@@ -1600,7 +1607,6 @@ function setupIpcHandlers() {
   ipcMain.on('startRecording', () => {
     clearQueuedPaste('recording-started');
     lastTranscript = null;
-    lastError = null;
     if (stateMachine.getState() !== 'recording') {
       stateMachine.transition('recording', 'Recording started');
     }
@@ -1624,11 +1630,7 @@ function setupIpcHandlers() {
       const { sessionId, segmentPaths } = payload;
       if (!segmentPaths.length) {
         const message = 'No audio captured.';
-        clearQueuedPaste('no-audio-captured');
-        stateMachine.transition('error', message);
-        lastError = message;
-        sendStateUpdate('error', message);
-        scheduleAutoRestart('stop-recording-no-audio');
+        reportRecoverableError('stop-recording-no-audio', message);
         cleanupSession(sessionId, segmentPaths);
         return;
       }
@@ -1636,11 +1638,7 @@ function setupIpcHandlers() {
       const apiKey = process.env.OPENAI_API_KEY ?? config.apiKey;
       if (!apiKey && !isLocalProvider(config.provider)) {
         const message = 'Missing OPENAI_API_KEY.';
-        clearQueuedPaste('missing-api-key');
-        stateMachine.transition('error', message);
-        lastError = message;
-        sendStateUpdate('error', message);
-        scheduleAutoRestart('missing-api-key');
+        reportRecoverableError('missing-api-key', message);
         cleanupSession(sessionId, segmentPaths);
         return;
       }
@@ -1677,12 +1675,7 @@ function setupIpcHandlers() {
           return;
         }
         const message = 'Transcription failed.';
-        clearQueuedPaste('transcription-failed');
-        lastError = message;
-        stateMachine.transition('error', message);
-        logger.error('Transcription failed', { error: String(error) });
-        sendStateUpdate('error', message);
-        scheduleAutoRestart('transcription-failed');
+        reportRecoverableError('transcription-failed', message, { error: String(error) });
       } finally {
         cancelledTranscriptionJobIds.delete(transcriptionJobId);
         cleanupSession(sessionId, segmentPaths);
@@ -1701,11 +1694,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('recordingError', (_event, message: string) => {
-    clearQueuedPaste('recording-error');
-    lastError = message;
-    stateMachine.transition('error', message);
-    sendStateUpdate('error', message);
-    scheduleAutoRestart('renderer-recording-error');
+    reportRecoverableError('renderer-recording-error', message);
   });
 
   ipcMain.on('hideIndicator', () => {
@@ -1862,7 +1851,6 @@ function initializeApp() {
     updateTrayMenu();
     if (change.next === 'error') {
       clearQueuedPaste('state-error');
-      scheduleAutoRestart(`state-error:${change.reason ?? 'unspecified'}`);
     }
   });
 
