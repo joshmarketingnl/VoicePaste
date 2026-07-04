@@ -37,7 +37,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npm run build
-          npx electron-builder --mac zip --arm64 --x64
+          npx electron-builder --mac zip --arm64 --x64 --publish never
 
       - name: List artifacts
         run: ls -la release/

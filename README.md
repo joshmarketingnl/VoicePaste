@@ -2,6 +2,21 @@
 
 VoicePaste is a small desktop utility that lets you record speech with a global hotkey, transcribe via OpenAI or a local OpenAI-compatible transcription server, and paste the result into any focused app.
 
+## Download (macOS, no build needed)
+
+Grab the latest zip from [Releases](https://github.com/joshmarketingnl/VoicePaste/releases)
+(`-arm64-mac.zip` for Apple Silicon, `-mac.zip` for Intel), unzip, and move the app to
+`/Applications`. The build is unsigned — clear Gatekeeper once (see the Gatekeeper section below).
+
+**Fully local transcription (free, offline):** install the companion server with one line —
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joshmarketingnl/voicepaste-local-server/main/macos/install.sh | bash -s -- --autostart
+```
+
+— then set `provider` to `http://127.0.0.1:8765/v1` in the app settings. No API key needed.
+macOS builds are produced by the [build-macos workflow](.github/workflows/build-macos.yml).
+
 ## Requirements
 - Node.js 18+ (Node 20 recommended)
 - macOS (primary) or Windows (secondary)
