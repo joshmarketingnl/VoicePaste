@@ -9,11 +9,14 @@ interface VoicepasteStateUpdate {
 interface CursorIndicatorUpdate {
   state: 'recording' | 'transcribing' | 'ready' | 'error';
   sizePx: number;
+  style?: 'dot' | 'detailed';
+  label?: string;
 }
 
 interface VoicepasteSettings {
   developerMode: boolean;
   uiLanguage: 'en' | 'nl';
+  indicatorStyle: 'dot' | 'detailed';
   providerCode: string;
   modelCode: string;
   apiKey: string;

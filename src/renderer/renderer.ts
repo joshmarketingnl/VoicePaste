@@ -18,6 +18,7 @@ type StatusTone = 'neutral' | 'error' | 'success';
 interface RendererSettings {
   developerMode: boolean;
   uiLanguage: UiLanguage;
+  indicatorStyle: 'dot' | 'detailed';
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -48,6 +49,8 @@ const languageNlButton = document.getElementById('languageNlButton') as HTMLButt
 const languageEnButton = document.getElementById('languageEnButton') as HTMLButtonElement;
 const developerModeLabel = document.getElementById('developerModeLabel') as HTMLElement;
 const developerModeInput = document.getElementById('developerModeInput') as HTMLInputElement;
+const indicatorStyleLabel = document.getElementById('indicatorStyleLabel') as HTMLElement;
+const indicatorStyleInput = document.getElementById('indicatorStyleInput') as HTMLInputElement;
 const developerProviderField = document.getElementById('developerProviderField') as HTMLElement;
 const developerModelField = document.getElementById('developerModelField') as HTMLElement;
 const providerCodeLabel = document.getElementById('providerCodeLabel') as HTMLElement;
@@ -140,6 +143,7 @@ const PLATFORM_DEFAULT_HOTKEYS = defaultConfigForPlatform(hotkeyDisplayPlatform)
 let settingsDraft: RendererSettings = {
   developerMode: false,
   uiLanguage: 'en',
+  indicatorStyle: 'dot',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -148,6 +152,7 @@ let settingsDraft: RendererSettings = {
 let settingsCommitted: RendererSettings = {
   developerMode: false,
   uiLanguage: 'en',
+  indicatorStyle: 'dot',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -193,6 +198,7 @@ const UI_TEXT: Record<
   {
     settingsTitle: string;
     developerMode: string;
+    detailedIndicator: string;
     providerCode: string;
     modelCode: string;
     openAiApiKey: string;
@@ -234,6 +240,7 @@ const UI_TEXT: Record<
   en: {
     settingsTitle: 'Settings',
     developerMode: 'Developer mode',
+    detailedIndicator: 'Detailed indicator (status text)',
     providerCode: 'Provider code',
     modelCode: 'Model code',
     openAiApiKey: 'OpenAI API key',
@@ -274,6 +281,7 @@ const UI_TEXT: Record<
   nl: {
     settingsTitle: 'Instellingen',
     developerMode: 'Ontwikkelaarsmodus',
+    detailedIndicator: 'Uitgebreide indicator (statustekst)',
     providerCode: 'Provider-code',
     modelCode: 'Model-code',
     openAiApiKey: 'OpenAI API-sleutel',
@@ -347,6 +355,7 @@ function cloneSettings(settings: RendererSettings): RendererSettings {
   return {
     developerMode: settings.developerMode,
     uiLanguage: settings.uiLanguage,
+    indicatorStyle: settings.indicatorStyle,
     providerCode: settings.providerCode,
     modelCode: settings.modelCode,
     apiKey: settings.apiKey,
@@ -429,6 +438,7 @@ function applyLocalizedLabels() {
   const uiText = getUiText();
   settingsTitleText.textContent = uiText.settingsTitle;
   developerModeLabel.textContent = uiText.developerMode;
+  indicatorStyleLabel.textContent = uiText.detailedIndicator;
   providerCodeLabel.textContent = uiText.providerCode;
   modelCodeLabel.textContent = uiText.modelCode;
   providerCodeInput.placeholder = uiText.providerCode;
@@ -489,6 +499,7 @@ function syncSettingsDraftFromInputs() {
   settingsDraft = {
     ...settingsDraft,
     developerMode: developerModeInput.checked,
+    indicatorStyle: indicatorStyleInput.checked ? 'detailed' : 'dot',
     providerCode: providerCodeInput.value,
     modelCode: modelCodeInput.value,
     apiKey: apiKeyInput.value,
@@ -780,6 +791,7 @@ function updateCaptureButtons() {
 function applySettingsToView(settings: RendererSettings) {
   settingsDraft = cloneSettings(settings);
   developerModeInput.checked = settingsDraft.developerMode;
+  indicatorStyleInput.checked = settingsDraft.indicatorStyle === 'detailed';
   providerCodeInput.value = settingsDraft.providerCode;
   modelCodeInput.value = settingsDraft.modelCode;
   apiKeyInput.value = settingsDraft.apiKey;
@@ -806,6 +818,7 @@ function setSettingsBusy(isBusy: boolean) {
     hotkeyCaptureButtons[hotkeyKey].disabled = isBusy;
   }
   developerModeInput.disabled = isBusy;
+  indicatorStyleInput.disabled = isBusy;
   apiKeyInput.disabled = isBusy;
   syncDeveloperModeView();
 }
@@ -931,6 +944,7 @@ async function saveSettingsFromUi(successMessage: string): Promise<boolean> {
   const payload: RendererSettings = {
     developerMode: settingsDraft.developerMode,
     uiLanguage: settingsDraft.uiLanguage,
+    indicatorStyle: settingsDraft.indicatorStyle,
     providerCode: settingsDraft.providerCode,
     modelCode: settingsDraft.modelCode,
     apiKey: apiKeyInput.value,

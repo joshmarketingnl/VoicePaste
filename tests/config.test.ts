@@ -22,6 +22,11 @@ describe('defaultConfigForPlatform', () => {
     expect(config.developerMode).toBe(false);
     expect(config.uiLanguage).toBe('en');
   });
+
+  it('defaults indicatorStyle to dot', () => {
+    const config = defaultConfigForPlatform('win32');
+    expect(config.indicatorStyle).toBe('dot');
+  });
 });
 
 describe('mergeConfig', () => {
@@ -43,6 +48,12 @@ describe('mergeConfig', () => {
     expect(config.model).toBe(DEFAULT_MODEL);
     expect(config.developerMode).toBe(false);
     expect(config.uiLanguage).toBe('en');
+  });
+
+  it('falls back to the dot indicator style for missing or invalid values', () => {
+    expect(mergeConfig({}, 'win32').indicatorStyle).toBe('dot');
+    expect(mergeConfig({ indicatorStyle: 'nonsense' as never }, 'win32').indicatorStyle).toBe('dot');
+    expect(mergeConfig({ indicatorStyle: 'detailed' }, 'win32').indicatorStyle).toBe('detailed');
   });
 });
 

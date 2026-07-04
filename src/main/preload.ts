@@ -83,7 +83,12 @@ contextBridge.exposeInMainWorld('voicepaste', {
   onError: (callback: (data: { message: string }) => void) =>
     ipcRenderer.on('error', (_event, data) => callback(data)),
   onCursorIndicatorUpdate: (
-    callback: (data: { state: 'recording' | 'transcribing' | 'ready' | 'error'; sizePx: number }) => void,
+    callback: (data: {
+      state: 'recording' | 'transcribing' | 'ready' | 'error';
+      sizePx: number;
+      style?: 'dot' | 'detailed';
+      label?: string;
+    }) => void,
   ) => ipcRenderer.on('cursorIndicatorUpdate', (_event, data) => callback(data)),
   notifyCursorIndicatorReady: () => ipcRenderer.send('cursorIndicatorReady'),
 });

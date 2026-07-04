@@ -1,4 +1,4 @@
-import { AppConfig, IndicatorMode, LanguageMode, UiLanguage } from './types';
+import { AppConfig, IndicatorMode, IndicatorStyle, LanguageMode, UiLanguage } from './types';
 
 export const DEFAULT_MODEL = 'gpt-4o-mini-transcribe';
 export const DEFAULT_PROVIDER = 'https://api.openai.com/v1';
@@ -50,6 +50,7 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
     languageMode: 'auto',
     restoreClipboard: true,
     indicator: 'showAlways',
+    indicatorStyle: 'dot',
     diagnostics: false,
   };
 }
@@ -70,6 +71,10 @@ function isLanguageMode(value: unknown): value is LanguageMode {
 
 function isIndicatorMode(value: unknown): value is IndicatorMode {
   return value === 'showAlways' || value === 'onlyWhenActive';
+}
+
+function isIndicatorStyle(value: unknown): value is IndicatorStyle {
+  return value === 'dot' || value === 'detailed';
 }
 
 function isUiLanguage(value: unknown): value is UiLanguage {
@@ -97,6 +102,7 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
     languageMode: isLanguageMode(input.languageMode) ? input.languageMode : defaults.languageMode,
     restoreClipboard: typeof input.restoreClipboard === 'boolean' ? input.restoreClipboard : defaults.restoreClipboard,
     indicator: isIndicatorMode(input.indicator) ? input.indicator : defaults.indicator,
+    indicatorStyle: isIndicatorStyle(input.indicatorStyle) ? input.indicatorStyle : defaults.indicatorStyle,
     diagnostics: typeof input.diagnostics === 'boolean' ? input.diagnostics : defaults.diagnostics,
     apiKey: typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined,
   };

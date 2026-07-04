@@ -45,8 +45,40 @@ body {
 
 .recording-mark,
 .spinner,
-.icon {
+.icon,
+.indicator-label {
   display: none;
+}
+
+.indicator-label {
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size: calc(var(--indicator-size) * 0.36);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+/* Optional "detailed" style: a pill that shows the status text next to the
+   state icon. The default "dot" style keeps the original compact circle. */
+#indicator[data-style='detailed'] {
+  width: auto;
+  min-width: var(--indicator-size);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(var(--indicator-size) * 0.2);
+  padding: 0 calc(var(--indicator-size) * 0.4) 0 calc(var(--indicator-size) * 0.22);
+}
+
+#indicator[data-style='detailed'] .indicator-label {
+  display: inline-block;
+}
+
+#indicator[data-style='detailed'] .recording-mark,
+#indicator[data-style='detailed'] .spinner,
+#indicator[data-style='detailed'] .icon {
+  flex: 0 0 auto;
 }
 
 .recording-mark {

@@ -14,7 +14,7 @@ import {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { AppConfig, AppState, HotkeyId, HotkeysConfig } from '../shared/types';
+import { AppConfig, AppState, HotkeyId, HotkeysConfig, IndicatorStyle } from '../shared/types';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, isLocalProvider } from '../shared/config';
 import { buildPreview } from '../shared/transcript';
 import { Logger } from '../shared/logger';
@@ -48,6 +48,7 @@ type UiLanguage = 'en' | 'nl';
 interface SettingsPayload {
   developerMode: boolean;
   uiLanguage: UiLanguage;
+  indicatorStyle: IndicatorStyle;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -57,6 +58,7 @@ interface SettingsPayload {
 interface SettingsResponse {
   developerMode: boolean;
   uiLanguage: UiLanguage;
+  indicatorStyle: IndicatorStyle;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -73,6 +75,9 @@ const WINDOWS_TRAY_WINDOW_MARGIN = 12;
 const CURSOR_INDICATOR_SIZE = 32;
 const CURSOR_INDICATOR_WINDOW_PADDING = 4;
 const CURSOR_INDICATOR_WINDOW_SIZE = CURSOR_INDICATOR_SIZE + CURSOR_INDICATOR_WINDOW_PADDING * 2;
+// Width of the indicator window when the optional "detailed" style (pill with
+// status text) is active. The dot style keeps the original square window.
+const CURSOR_INDICATOR_DETAILED_WIDTH = 148 + CURSOR_INDICATOR_WINDOW_PADDING * 2;
 const CURSOR_INDICATOR_OFFSET_X = 10;
 const CURSOR_INDICATOR_OFFSET_Y = 0;
 const CURSOR_FOLLOW_INTERVAL_MS = 16;
@@ -223,6 +228,7 @@ function getSettingsResponse(): SettingsResponse {
   return {
     developerMode: config.developerMode,
     uiLanguage: config.uiLanguage,
+    indicatorStyle: config.indicatorStyle,
     providerCode: config.provider,
     modelCode: config.model,
     apiKey: config.apiKey ?? '',
@@ -235,6 +241,7 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
     !payload ||
     typeof payload.developerMode !== 'boolean' ||
     (payload.uiLanguage !== 'en' && payload.uiLanguage !== 'nl') ||
+    (payload.indicatorStyle !== 'dot' && payload.indicatorStyle !== 'detailed') ||
     typeof payload.providerCode !== 'string' ||
     typeof payload.modelCode !== 'string' ||
     typeof payload.apiKey !== 'string'
@@ -304,6 +311,27 @@ function sendStateUpdate(state: AppState, message?: string, preview?: string) {
   }
 }
 
+const CURSOR_INDICATOR_LABELS: Record<UiLanguage, Record<CursorIndicatorState, string>> = {
+  en: {
+    recording: 'Recording…',
+    transcribing: 'Processing…',
+    ready: 'Ready',
+    error: 'Error',
+  },
+  nl: {
+    recording: 'Opnemen…',
+    transcribing: 'Verwerken…',
+    ready: 'Klaar',
+    error: 'Fout',
+  },
+};
+
+function getCursorIndicatorWindowWidth(): number {
+  return config.indicatorStyle === 'detailed'
+    ? CURSOR_INDICATOR_DETAILED_WIDTH
+    : CURSOR_INDICATOR_WINDOW_SIZE;
+}
+
 function sendCursorIndicatorUpdate(state: CursorIndicatorState) {
   if (!cursorIndicatorWindow || !cursorIndicatorReady) {
     return;
@@ -311,6 +339,8 @@ function sendCursorIndicatorUpdate(state: CursorIndicatorState) {
   cursorIndicatorWindow.webContents.send('cursorIndicatorUpdate', {
     state,
     sizePx: CURSOR_INDICATOR_SIZE,
+    style: config.indicatorStyle,
+    label: CURSOR_INDICATOR_LABELS[config.uiLanguage][state],
   });
 }
 
@@ -1197,7 +1227,7 @@ function createCursorIndicatorWindow(): BrowserWindow | null {
   const preloadPath = path.join(__dirname, 'preload.js');
   const useTransparentWindow = shouldUseTransparentCursorIndicatorWindow(process.platform);
   const window = new BrowserWindow({
-    width: CURSOR_INDICATOR_WINDOW_SIZE,
+    width: getCursorIndicatorWindowWidth(),
     height: CURSOR_INDICATOR_WINDOW_SIZE,
     frame: false,
     transparent: useTransparentWindow,
@@ -1830,6 +1860,7 @@ function setupIpcHandlers() {
       ...config,
       developerMode: payload.developerMode,
       uiLanguage: payload.uiLanguage,
+      indicatorStyle: payload.indicatorStyle,
       provider: payload.developerMode ? payload.providerCode.trim() : DEFAULT_PROVIDER,
       model: payload.developerMode ? payload.modelCode.trim() : DEFAULT_MODEL,
       apiKey: normalizeApiKeyForStorage(payload.apiKey),
@@ -1849,9 +1880,25 @@ function setupIpcHandlers() {
       return { ok: false, error: rebindError };
     }
 
+    // Resize the cursor indicator window when the style changed and push the
+    // new style/labels to the renderer immediately.
+    if (previousConfig.indicatorStyle !== config.indicatorStyle || previousConfig.uiLanguage !== config.uiLanguage) {
+      if (cursorIndicatorWindow) {
+        const bounds = cursorIndicatorWindow.getBounds();
+        cursorIndicatorWindow.setBounds({
+          ...bounds,
+          width: getCursorIndicatorWindowWidth(),
+        });
+      }
+      if (cursorIndicatorState) {
+        sendCursorIndicatorUpdate(cursorIndicatorState);
+      }
+    }
+
     logger.info('Settings saved', {
       developerMode: config.developerMode,
       uiLanguage: config.uiLanguage,
+      indicatorStyle: config.indicatorStyle,
       provider: config.provider,
       model: config.model,
       hotkeys: config.hotkeys,

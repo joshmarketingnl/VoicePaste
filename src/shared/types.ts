@@ -1,6 +1,7 @@
 export type AppState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'error';
 export type LanguageMode = 'auto' | 'en' | 'nl' | 'es';
 export type IndicatorMode = 'showAlways' | 'onlyWhenActive';
+export type IndicatorStyle = 'dot' | 'detailed';
 export type UiLanguage = 'en' | 'nl';
 export type HotkeyId = 'toggleRecord' | 'pasteTranscript' | 'cancelRecording' | 'stopAndTranscribe' | 'showControlWindow';
 
@@ -21,6 +22,7 @@ export interface AppConfig {
   languageMode: LanguageMode;
   restoreClipboard: boolean;
   indicator: IndicatorMode;
+  indicatorStyle: IndicatorStyle;
   diagnostics: boolean;
   apiKey?: string;
 }
