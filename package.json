@@ -46,7 +46,11 @@
     "mac": {
       "target": [
         "zip"
-      ]
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "VoicePaste heeft toegang tot je microfoon nodig om spraak op te nemen voor transcriptie.",
+        "NSAppleEventsUsageDescription": "VoicePaste stuurt Cmd+V naar andere apps om het transcript automatisch te plakken."
+      }
     },
     "win": {
       "icon": "src/main/assets/trayWin.ico",

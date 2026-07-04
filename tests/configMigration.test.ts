@@ -20,11 +20,13 @@ afterEach(() => {
 
 describe('getLegacyConfigCandidates', () => {
   it('returns v0.4 candidate config paths', () => {
-    const userDataPath = '/tmp/voicepaste-v0.5';
+    // Use path.join so the expectation matches the platform separator
+    // (the implementation uses path.join, which yields "\" on Windows).
+    const userDataPath = path.join(path.sep, 'tmp', 'voicepaste-v0.5');
     const candidates = getLegacyConfigCandidates(userDataPath);
     expect(candidates).toEqual([
-      '/tmp/voicepaste-v0.4/config.json',
-      '/tmp/VoicePaste v0.4/config.json',
+      path.join(path.sep, 'tmp', 'voicepaste-v0.4', 'config.json'),
+      path.join(path.sep, 'tmp', 'VoicePaste v0.4', 'config.json'),
     ]);
   });
 });

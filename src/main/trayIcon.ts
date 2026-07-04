@@ -25,8 +25,14 @@ export function createTrayIcon() {
     return trayIcon;
   }
 
-  const iconPath = path.join(__dirname, 'assets', 'trayTemplate.svg');
-  const image = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
+  // Prefer PNG: Electron's createFromPath cannot rasterize SVG files, which
+  // would leave the tray invisible on macOS.
+  const pngPath = path.join(__dirname, 'assets', 'trayTemplate.png');
+  const svgPath = path.join(__dirname, 'assets', 'trayTemplate.svg');
+  let image = nativeImage.createFromPath(pngPath).resize({ width: 18, height: 18 });
+  if (image.isEmpty()) {
+    image = nativeImage.createFromPath(svgPath).resize({ width: 18, height: 18 });
+  }
   const trayIcon = image.isEmpty()
     ? createFallbackTrayIcon('black').resize({ width: 18, height: 18 })
     : image;

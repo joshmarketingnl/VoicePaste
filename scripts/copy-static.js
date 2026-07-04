@@ -18,7 +18,7 @@ if (!fs.existsSync(mainAssetsOutDir)) {
   fs.mkdirSync(mainAssetsOutDir, { recursive: true });
 }
 
-const mainAssets = ['trayTemplate.svg', 'trayWin.ico'];
+const mainAssets = ['trayTemplate.svg', 'trayTemplate.png', 'trayWin.ico'];
 for (const file of mainAssets) {
   const src = path.join(__dirname, '..', 'src', 'main', 'assets', file);
   const dest = path.join(mainAssetsOutDir, file);
