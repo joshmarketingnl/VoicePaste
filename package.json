@@ -1,6 +1,6 @@
 {
   "name": "voicepaste-developer-beta-v1.1",
-  "version": "1.1.0-beta.3",
+  "version": "1.1.0-beta.4",
   "private": true,
   "description": "Local hotkey recording + transcription + paste utility.",
   "main": "dist/main/main.js",
@@ -47,6 +47,7 @@
       "target": [
         "zip"
       ],
+      "hardenedRuntime": false,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "VoicePaste heeft toegang tot je microfoon nodig om spraak op te nemen voor transcriptie.",
         "NSAppleEventsUsageDescription": "VoicePaste stuurt Cmd+V naar andere apps om het transcript automatisch te plakken."
