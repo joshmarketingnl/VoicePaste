@@ -31,6 +31,21 @@ jobs:
           npm run typecheck
           npm test
 
+      - name: Build embedded engine (whisper-server, Metal)
+        run: |
+          # macos-14 runners are arm64; build the Metal whisper-server that the
+          # app bundles + launches on-device. (Intel users fall back to the
+          # first-run CUDA/CPU download path; a dedicated x64 engine build can
+          # be added on an Intel runner later.)
+          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp /tmp/whispercpp
+          cmake -S /tmp/whispercpp -B /tmp/whispercpp/build -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DGGML_METAL_EMBED_LIBRARY=ON
+          cmake --build /tmp/whispercpp/build --config Release -j --target whisper-server
+          mkdir -p resources/engine/darwin-arm64 resources/engine/darwin-x64
+          cp /tmp/whispercpp/build/bin/whisper-server resources/engine/darwin-arm64/
+          cp /tmp/whispercpp/build/bin/whisper-server resources/engine/darwin-x64/
+          chmod +x resources/engine/darwin-arm64/whisper-server resources/engine/darwin-x64/whisper-server
+
       - name: Build & package (arm64 + x64)
         env:
           # No signing identity available — produce unsigned zips

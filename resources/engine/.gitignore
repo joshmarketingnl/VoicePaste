@@ -1,0 +1,5 @@
+# Engine binaries are fetched per platform (npm run fetch-engine) or built by
+# CI — never committed. The app bundles whatever is here at build time.
+*
+!.gitignore
+!README.md

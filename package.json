@@ -1,6 +1,6 @@
 {
   "name": "voicepaste-developer-beta-v1.1",
-  "version": "1.1.0-beta.4",
+  "version": "1.1.0-beta.5",
   "private": true,
   "description": "Local hotkey recording + transcription + paste utility.",
   "main": "dist/main/main.js",
@@ -13,6 +13,7 @@
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "vitest run",
+    "fetch-engine": "node scripts/fetch-engine.mjs",
     "package:mac": "npm run build && electron-builder --mac zip",
     "package:win": "npm run build && electron-builder --win nsis zip --x64",
     "package:win:arm64": "npm run build && electron-builder --win nsis zip --arm64",
@@ -42,6 +43,13 @@
     "files": [
       "dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/engine",
+        "to": "engine",
+        "filter": ["**/*"]
+      }
     ],
     "mac": {
       "target": [

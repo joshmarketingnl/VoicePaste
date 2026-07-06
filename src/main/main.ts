@@ -14,14 +14,15 @@ import {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { AppConfig, AppState, HotkeyId, HotkeysConfig, IndicatorStyle } from '../shared/types';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, isLocalProvider } from '../shared/config';
+import { AppConfig, AppState, HotkeyId, HotkeysConfig, IndicatorStyle, TranscriptionEngine } from '../shared/types';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../shared/config';
 import { buildPreview } from '../shared/transcript';
 import { Logger } from '../shared/logger';
 import { loadConfig, saveConfig } from './config';
 import { createLogger } from './logger';
 import { StateMachine } from './stateMachine';
-import { transcribeSegments } from './transcription';
+import { transcribeSegments, TranscriptionTarget } from './transcription';
+import { EngineManager, EngineStatus } from './engineManager';
 import { pasteTranscript } from './paste';
 import { createTrayIcon } from './trayIcon';
 import {
@@ -49,6 +50,7 @@ interface SettingsPayload {
   developerMode: boolean;
   uiLanguage: UiLanguage;
   indicatorStyle: IndicatorStyle;
+  engine: TranscriptionEngine;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -59,6 +61,7 @@ interface SettingsResponse {
   developerMode: boolean;
   uiLanguage: UiLanguage;
   indicatorStyle: IndicatorStyle;
+  engine: TranscriptionEngine;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -133,6 +136,7 @@ let config: AppConfig;
 let configPath = '';
 let logger: Logger;
 let stateMachine: StateMachine;
+let engineManager: EngineManager | null = null;
 let lastTranscript: string | null = null;
 let activeTranscriptionJobs = 0;
 let indicatorHiddenByUser = false;
@@ -229,6 +233,7 @@ function getSettingsResponse(): SettingsResponse {
     developerMode: config.developerMode,
     uiLanguage: config.uiLanguage,
     indicatorStyle: config.indicatorStyle,
+    engine: config.engine,
     providerCode: config.provider,
     modelCode: config.model,
     apiKey: config.apiKey ?? '',
@@ -242,6 +247,7 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
     typeof payload.developerMode !== 'boolean' ||
     (payload.uiLanguage !== 'en' && payload.uiLanguage !== 'nl') ||
     (payload.indicatorStyle !== 'dot' && payload.indicatorStyle !== 'detailed') ||
+    (payload.engine !== 'local' && payload.engine !== 'openai' && payload.engine !== 'custom') ||
     typeof payload.providerCode !== 'string' ||
     typeof payload.modelCode !== 'string' ||
     typeof payload.apiKey !== 'string'
@@ -1764,10 +1770,12 @@ function setupIpcHandlers() {
         return;
       }
 
-      const apiKey = process.env.OPENAI_API_KEY ?? config.apiKey;
-      if (!apiKey && !isLocalProvider(config.provider)) {
-        const message = 'Missing OPENAI_API_KEY.';
-        reportRecoverableError('missing-api-key', message);
+      let target: TranscriptionTarget;
+      try {
+        target = await resolveTranscriptionTarget();
+      } catch (error) {
+        const message = engineStartupMessage(error);
+        reportRecoverableError('engine-not-ready', message, { error: String(error) });
         cleanupSession(sessionId, segmentPaths);
         return;
       }
@@ -1780,7 +1788,7 @@ function setupIpcHandlers() {
       const isTranscriptionJobCancelled = () => cancelledTranscriptionJobIds.has(transcriptionJobId);
 
       try {
-        const transcript = await transcribeSegments(segmentPaths, config, apiKey ?? '', logger);
+        const transcript = await transcribeSegments(segmentPaths, config, target, logger);
         if (isTranscriptionJobCancelled()) {
           logger.info('Transcription result ignored; job cancelled', { transcriptionJobId });
           return;
@@ -1856,13 +1864,17 @@ function setupIpcHandlers() {
       },
     };
 
+    const engine: TranscriptionEngine = payload.engine ?? config.engine ?? 'local';
     config = {
       ...config,
       developerMode: payload.developerMode,
       uiLanguage: payload.uiLanguage,
       indicatorStyle: payload.indicatorStyle,
-      provider: payload.developerMode ? payload.providerCode.trim() : DEFAULT_PROVIDER,
-      model: payload.developerMode ? payload.modelCode.trim() : DEFAULT_MODEL,
+      engine,
+      // provider/model only matter for the 'custom' engine; for local/openai
+      // they stay at sensible defaults and are never used to override the engine.
+      provider: engine === 'custom' && payload.providerCode.trim() ? payload.providerCode.trim() : DEFAULT_PROVIDER,
+      model: payload.modelCode.trim() || DEFAULT_MODEL,
       apiKey: normalizeApiKeyForStorage(payload.apiKey),
       hotkeys: normalizeSettingsHotkeys(payload.hotkeys),
     };
@@ -1895,10 +1907,22 @@ function setupIpcHandlers() {
       }
     }
 
+    // React to an engine switch: start/stop the embedded engine as needed.
+    if (previousConfig.engine !== config.engine) {
+      if (config.engine === 'local') {
+        if (!engineManager) engineManager = createEngineManager();
+        engineManager.ensureReady().catch((error) => logger.info('Engine warm-up deferred', { error: String(error) }));
+      } else {
+        engineManager?.dispose();
+        engineManager = null;
+      }
+    }
+
     logger.info('Settings saved', {
       developerMode: config.developerMode,
       uiLanguage: config.uiLanguage,
       indicatorStyle: config.indicatorStyle,
+      engine: config.engine,
       provider: config.provider,
       model: config.model,
       hotkeys: config.hotkeys,
@@ -1960,6 +1984,64 @@ function setupIpcHandlers() {
   });
 }
 
+/**
+ * Decide where transcription requests go, based on the configured engine:
+ * - 'local'  → the app-managed embedded whisper.cpp engine (started on demand)
+ * - 'openai' → OpenAI cloud (needs an API key)
+ * - 'custom' → a user-supplied OpenAI-compatible endpoint (config.provider)
+ */
+async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
+  if (config.engine === 'local') {
+    if (!engineManager) {
+      engineManager = createEngineManager();
+    }
+    await engineManager.ensureReady();
+    const baseUrl = engineManager.getBaseUrl();
+    if (!baseUrl) {
+      throw new Error(engineManager.getLastError() ?? 'Local engine not ready');
+    }
+    return { baseUrl, apiKey: '' };
+  }
+
+  if (config.engine === 'custom') {
+    return { baseUrl: config.provider?.trim() || DEFAULT_PROVIDER, apiKey: config.apiKey ?? '' };
+  }
+
+  // openai
+  const apiKey = process.env.OPENAI_API_KEY ?? config.apiKey ?? '';
+  if (!apiKey) {
+    throw new Error('Missing OPENAI_API_KEY.');
+  }
+  return { baseUrl: DEFAULT_PROVIDER, apiKey };
+}
+
+function createEngineManager(): EngineManager {
+  return new EngineManager(logger, {
+    onStatusChange: (status: EngineStatus) => {
+      logger.info('Engine status', { status });
+      mainWindow?.webContents.send('engineStatus', { status });
+    },
+    onProgress: (p) => {
+      mainWindow?.webContents.send('engineProgress', p);
+    },
+  });
+}
+
+/** Friendly message when the local engine isn't up yet (still downloading/starting). */
+function engineStartupMessage(error: unknown): string {
+  const status = engineManager?.getStatus();
+  const dutch = config.uiLanguage === 'nl';
+  if (config.engine === 'local' && status === 'preparing') {
+    return dutch
+      ? 'Lokaal model wordt eenmalig gedownload — probeer het zo opnieuw.'
+      : 'Downloading the local model (one-time) — try again in a moment.';
+  }
+  if (config.engine === 'local' && (status === 'starting' || status === 'stopped')) {
+    return dutch ? 'De lokale transcriptie-motor start op — probeer het zo opnieuw.' : 'The local engine is starting — try again in a moment.';
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 function initializeApp() {
   const loaded = loadConfig();
   config = loaded.config;
@@ -2015,6 +2097,15 @@ function initializeApp() {
   updateIndicatorVisibility('idle');
   updateCursorIndicatorForState('idle', 'initialize');
   updateTrayMenu();
+
+  // Warm up the embedded engine in the background so the first dictation is
+  // instant. Failures are non-fatal here — they surface on the first attempt.
+  if (config.engine === 'local') {
+    engineManager = createEngineManager();
+    engineManager.ensureReady().catch((error) => {
+      logger.info('Engine warm-up deferred', { error: String(error) });
+    });
+  }
 }
 
 app.on('before-quit', () => {
@@ -2024,6 +2115,8 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {});
 
 app.on('will-quit', () => {
+  engineManager?.dispose();
+  engineManager = null;
   clearQueuedPaste('will-quit');
   clearReadyIndicatorTimer();
   clearErrorIndicatorTimer();

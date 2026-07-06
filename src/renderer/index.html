@@ -117,6 +117,15 @@
           </div>
         </div>
         <div class="settings-field">
+          <span id="engineLabel" class="settings-label">Transcription</span>
+          <select id="engineSelect" class="settings-input settings-select">
+            <option id="engineOptionLocal" value="local">On this device (private, free)</option>
+            <option id="engineOptionOpenai" value="openai">OpenAI (cloud)</option>
+            <option id="engineOptionCustom" value="custom">Custom server</option>
+          </select>
+        </div>
+        <div id="engineHint" class="settings-hint"></div>
+        <div class="settings-field">
           <span id="recordHotkeyLabel" class="settings-label">Record hotkey</span>
           <div class="settings-inline">
             <div id="toggleHotkeyValue" class="hotkey-value">-</div>

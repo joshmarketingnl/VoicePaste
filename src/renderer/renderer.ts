@@ -15,10 +15,13 @@ type SettingsHotkeyKey = HotkeyId;
 type UiLanguage = 'en' | 'nl';
 type StatusTone = 'neutral' | 'error' | 'success';
 
+type TranscriptionEngine = 'local' | 'openai' | 'custom';
+
 interface RendererSettings {
   developerMode: boolean;
   uiLanguage: UiLanguage;
   indicatorStyle: 'dot' | 'detailed';
+  engine: TranscriptionEngine;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -51,6 +54,12 @@ const developerModeLabel = document.getElementById('developerModeLabel') as HTML
 const developerModeInput = document.getElementById('developerModeInput') as HTMLInputElement;
 const indicatorStyleLabel = document.getElementById('indicatorStyleLabel') as HTMLElement;
 const indicatorStyleInput = document.getElementById('indicatorStyleInput') as HTMLInputElement;
+const engineLabel = document.getElementById('engineLabel') as HTMLElement;
+const engineSelect = document.getElementById('engineSelect') as HTMLSelectElement;
+const engineHint = document.getElementById('engineHint') as HTMLElement;
+const engineOptionLocal = document.getElementById('engineOptionLocal') as HTMLOptionElement;
+const engineOptionOpenai = document.getElementById('engineOptionOpenai') as HTMLOptionElement;
+const engineOptionCustom = document.getElementById('engineOptionCustom') as HTMLOptionElement;
 const developerProviderField = document.getElementById('developerProviderField') as HTMLElement;
 const developerModelField = document.getElementById('developerModelField') as HTMLElement;
 const providerCodeLabel = document.getElementById('providerCodeLabel') as HTMLElement;
@@ -144,6 +153,7 @@ let settingsDraft: RendererSettings = {
   developerMode: false,
   uiLanguage: 'en',
   indicatorStyle: 'dot',
+  engine: 'local',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -153,6 +163,7 @@ let settingsCommitted: RendererSettings = {
   developerMode: false,
   uiLanguage: 'en',
   indicatorStyle: 'dot',
+  engine: 'local',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -199,6 +210,11 @@ const UI_TEXT: Record<
     settingsTitle: string;
     developerMode: string;
     detailedIndicator: string;
+    engineLabel: string;
+    engineOptionLocal: string;
+    engineOptionOpenai: string;
+    engineOptionCustom: string;
+    engineHint: Record<'local' | 'openai' | 'custom', string>;
     providerCode: string;
     modelCode: string;
     openAiApiKey: string;
@@ -241,6 +257,15 @@ const UI_TEXT: Record<
     settingsTitle: 'Settings',
     developerMode: 'Developer mode',
     detailedIndicator: 'Detailed indicator (status text)',
+    engineLabel: 'Transcription',
+    engineOptionLocal: 'On this device (private, free)',
+    engineOptionOpenai: 'OpenAI (cloud)',
+    engineOptionCustom: 'Custom server',
+    engineHint: {
+      local: 'Runs on your device — nothing to start, no API key, works offline.',
+      openai: 'Uses the OpenAI cloud API (an API key is required).',
+      custom: 'Send audio to your own OpenAI-compatible endpoint.',
+    },
     providerCode: 'Provider code',
     modelCode: 'Model code',
     openAiApiKey: 'OpenAI API key',
@@ -282,6 +307,15 @@ const UI_TEXT: Record<
     settingsTitle: 'Instellingen',
     developerMode: 'Ontwikkelaarsmodus',
     detailedIndicator: 'Uitgebreide indicator (statustekst)',
+    engineLabel: 'Transcriptie',
+    engineOptionLocal: 'Op dit apparaat (privé, gratis)',
+    engineOptionOpenai: 'OpenAI (cloud)',
+    engineOptionCustom: 'Eigen server',
+    engineHint: {
+      local: 'Draait op je apparaat — niets te starten, geen API-sleutel, werkt offline.',
+      openai: 'Gebruikt de OpenAI cloud-API (API-sleutel vereist).',
+      custom: 'Stuurt audio naar je eigen OpenAI-compatibele endpoint.',
+    },
     providerCode: 'Provider-code',
     modelCode: 'Model-code',
     openAiApiKey: 'OpenAI API-sleutel',
@@ -356,6 +390,7 @@ function cloneSettings(settings: RendererSettings): RendererSettings {
     developerMode: settings.developerMode,
     uiLanguage: settings.uiLanguage,
     indicatorStyle: settings.indicatorStyle,
+    engine: settings.engine,
     providerCode: settings.providerCode,
     modelCode: settings.modelCode,
     apiKey: settings.apiKey,
@@ -439,6 +474,11 @@ function applyLocalizedLabels() {
   settingsTitleText.textContent = uiText.settingsTitle;
   developerModeLabel.textContent = uiText.developerMode;
   indicatorStyleLabel.textContent = uiText.detailedIndicator;
+  engineLabel.textContent = uiText.engineLabel;
+  engineOptionLocal.textContent = uiText.engineOptionLocal;
+  engineOptionOpenai.textContent = uiText.engineOptionOpenai;
+  engineOptionCustom.textContent = uiText.engineOptionCustom;
+  engineHint.textContent = uiText.engineHint[(engineSelect.value as TranscriptionEngine) || 'local'];
   providerCodeLabel.textContent = uiText.providerCode;
   modelCodeLabel.textContent = uiText.modelCode;
   providerCodeInput.placeholder = uiText.providerCode;
@@ -500,6 +540,7 @@ function syncSettingsDraftFromInputs() {
     ...settingsDraft,
     developerMode: developerModeInput.checked,
     indicatorStyle: indicatorStyleInput.checked ? 'detailed' : 'dot',
+    engine: (engineSelect.value as TranscriptionEngine) || 'local',
     providerCode: providerCodeInput.value,
     modelCode: modelCodeInput.value,
     apiKey: apiKeyInput.value,
@@ -792,6 +833,7 @@ function applySettingsToView(settings: RendererSettings) {
   settingsDraft = cloneSettings(settings);
   developerModeInput.checked = settingsDraft.developerMode;
   indicatorStyleInput.checked = settingsDraft.indicatorStyle === 'detailed';
+  engineSelect.value = settingsDraft.engine;
   providerCodeInput.value = settingsDraft.providerCode;
   modelCodeInput.value = settingsDraft.modelCode;
   apiKeyInput.value = settingsDraft.apiKey;
@@ -799,6 +841,17 @@ function applySettingsToView(settings: RendererSettings) {
     hotkeyValueElements[hotkeyKey].textContent = formatHotkeyForUi(settingsDraft.hotkeys[hotkeyKey]);
   }
   applyLocalizedLabels();
+  syncEngineView();
+}
+
+// Show/hide the API-key and custom-endpoint fields based on the chosen engine.
+function syncEngineView() {
+  const engine = (engineSelect.value as TranscriptionEngine) || 'local';
+  const uiText = getUiText();
+  engineHint.textContent = uiText.engineHint[engine];
+  // API key only relevant for OpenAI; custom endpoint only for 'custom'.
+  const showApiKey = engine === 'openai' || (engine === 'custom');
+  apiKeyLabel.parentElement && (apiKeyLabel.closest('.settings-field') as HTMLElement | null)?.style.setProperty('display', showApiKey ? '' : 'none');
 }
 
 function commitSettings(settings: RendererSettings) {
@@ -945,6 +998,7 @@ async function saveSettingsFromUi(successMessage: string): Promise<boolean> {
     developerMode: settingsDraft.developerMode,
     uiLanguage: settingsDraft.uiLanguage,
     indicatorStyle: settingsDraft.indicatorStyle,
+    engine: settingsDraft.engine,
     providerCode: settingsDraft.providerCode,
     modelCode: settingsDraft.modelCode,
     apiKey: apiKeyInput.value,
@@ -1187,6 +1241,11 @@ resetModelCodeButton.addEventListener('click', () => {
 developerModeInput.addEventListener('change', () => {
   settingsDraft.developerMode = developerModeInput.checked;
   applySettingsToView(settingsDraft);
+});
+
+engineSelect.addEventListener('change', () => {
+  settingsDraft.engine = (engineSelect.value as TranscriptionEngine) || 'local';
+  syncEngineView();
 });
 
 providerCodeInput.addEventListener('input', () => {

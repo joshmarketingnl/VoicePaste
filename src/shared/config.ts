@@ -1,4 +1,4 @@
-import { AppConfig, IndicatorMode, IndicatorStyle, LanguageMode, UiLanguage } from './types';
+import { AppConfig, IndicatorMode, IndicatorStyle, LanguageMode, TranscriptionEngine, UiLanguage } from './types';
 
 export const DEFAULT_MODEL = 'gpt-4o-mini-transcribe';
 export const DEFAULT_PROVIDER = 'https://api.openai.com/v1';
@@ -43,6 +43,7 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
   const hotkeys = DEFAULT_HOTKEYS_BY_PLATFORM[platform] ?? DEFAULT_HOTKEYS_BY_PLATFORM.win32;
   return {
     hotkeys,
+    engine: 'local',
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     developerMode: false,
@@ -81,6 +82,33 @@ function isUiLanguage(value: unknown): value is UiLanguage {
   return value === 'en' || value === 'nl';
 }
 
+function isTranscriptionEngine(value: unknown): value is TranscriptionEngine {
+  return value === 'local' || value === 'openai' || value === 'custom';
+}
+
+/**
+ * Pick the engine for a config that predates the `engine` field, so existing
+ * installs keep working: an OpenAI provider stays on OpenAI, a localhost
+ * provider (the old separate-server setup) moves to the built-in local engine,
+ * any other endpoint becomes a custom endpoint. Fresh installs default to local.
+ */
+function inferEngine(input: Partial<AppConfig>, defaults: AppConfig): TranscriptionEngine {
+  if (isTranscriptionEngine(input.engine)) {
+    return input.engine;
+  }
+  const provider = typeof input.provider === 'string' ? input.provider.trim() : '';
+  if (!provider) {
+    return defaults.engine;
+  }
+  if (provider === DEFAULT_PROVIDER) {
+    return 'openai';
+  }
+  if (isLocalProvider(provider)) {
+    return 'local';
+  }
+  return 'custom';
+}
+
 export function mergeConfig(input: Partial<AppConfig> | null | undefined, platform: PlatformKey): AppConfig {
   const defaults = defaultConfigForPlatform(platform);
   if (!input) {
@@ -95,6 +123,7 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
       stopAndTranscribe: input.hotkeys?.stopAndTranscribe ?? defaults.hotkeys.stopAndTranscribe,
       showControlWindow: input.hotkeys?.showControlWindow ?? defaults.hotkeys.showControlWindow,
     },
+    engine: inferEngine(input, defaults),
     provider: typeof input.provider === 'string' && input.provider.trim() ? input.provider.trim() : defaults.provider,
     model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : defaults.model,
     developerMode: typeof input.developerMode === 'boolean' ? input.developerMode : defaults.developerMode,

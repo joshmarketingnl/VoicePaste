@@ -551,6 +551,16 @@ body {
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
+.settings-select {
+  appearance: none;
+  cursor: pointer;
+  max-width: 260px;
+}
+
+.settings-select option {
+  color: #000;
+}
+
 .settings-inline {
   display: flex;
   gap: 8px;
