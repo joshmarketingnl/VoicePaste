@@ -557,6 +557,10 @@ body {
   max-width: 260px;
 }
 
+.settings-hint-spaced {
+  margin: 2px 0 14px;
+}
+
 .settings-select option {
   color: #000;
 }
