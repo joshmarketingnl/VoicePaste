@@ -29,8 +29,8 @@ describe('cursor indicator platform support', () => {
     expect(shouldWatchCursorIndicatorVisibility('darwin')).toBe(false);
   });
 
-  it('uses an opaque Windows window so the indicator remains visible when transparency fails', () => {
-    expect(shouldUseTransparentCursorIndicatorWindow('win32')).toBe(false);
+  it('uses a transparent window on every platform so only the circle is visible', () => {
+    expect(shouldUseTransparentCursorIndicatorWindow('win32')).toBe(true);
     expect(shouldUseTransparentCursorIndicatorWindow('darwin')).toBe(true);
   });
 });

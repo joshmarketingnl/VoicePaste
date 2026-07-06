@@ -83,8 +83,11 @@ const CURSOR_INDICATOR_WINDOW_SIZE = CURSOR_INDICATOR_SIZE + CURSOR_INDICATOR_WI
 const CURSOR_INDICATOR_DETAILED_WIDTH = 148 + CURSOR_INDICATOR_WINDOW_PADDING * 2;
 const CURSOR_INDICATOR_OFFSET_X = 10;
 const CURSOR_INDICATOR_OFFSET_Y = 0;
-const CURSOR_FOLLOW_INTERVAL_MS = 16;
-const CURSOR_FOLLOW_SMOOTHING = 0.45;
+// 7ms ≈ 144Hz so the indicator keeps up with high-refresh displays; the
+// smoothing factor is derived from the old 0.45-per-16ms so the effective
+// follow speed stays identical: 1 - (1 - 0.45)^(7/16) ≈ 0.23.
+const CURSOR_FOLLOW_INTERVAL_MS = 7;
+const CURSOR_FOLLOW_SMOOTHING = 0.23;
 const CURSOR_FOLLOW_SNAP_DISTANCE = 1.2;
 const CURSOR_FOLLOW_LARGE_JUMP_PX = 72;
 const CURSOR_VISIBILITY_WATCHDOG_INTERVAL_MS = 250;
@@ -807,7 +810,7 @@ function getClampedIndicatorPosition(point: CursorPoint): CursorPoint | null {
   const bounds = targetDisplay.workArea;
   // Clamp against the *expected* window size, not getBounds(): if the window
   // ever drifted in size (fractional-DPI rounding), getBounds() would clamp
-  // against the inflated size — and it's an extra native call at 60Hz.
+  // against the inflated size — and it's an extra native call at 144Hz.
   const windowWidth = getCursorIndicatorWindowWidth();
   const windowHeight = CURSOR_INDICATOR_WINDOW_SIZE;
 
@@ -837,8 +840,8 @@ function applyIndicatorPosition(point: CursorPoint) {
 
   // Position via setBounds WITH an explicit, fixed size. A plain setPosition
   // inflates the window a little on every call on displays with fractional
-  // DPI scaling (Electron DIP<->pixel rounding bug), which — at ~60 calls/s
-  // from the follow loop — grows the opaque indicator window into a large
+  // DPI scaling (Electron DIP<->pixel rounding bug), which — at ~144 calls/s
+  // from the follow loop — grows the indicator window into a large
   // black square within seconds. Reproduced: 200 calls at 112.5% scaling
   // grew the window from 41x41 to 455x437.
   cursorIndicatorWindow.setBounds(
