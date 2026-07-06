@@ -805,13 +805,17 @@ function getClampedIndicatorPosition(point: CursorPoint): CursorPoint | null {
 
   const targetDisplay = screen.getDisplayNearestPoint(point);
   const bounds = targetDisplay.workArea;
-  const windowBounds = cursorIndicatorWindow.getBounds();
+  // Clamp against the *expected* window size, not getBounds(): if the window
+  // ever drifted in size (fractional-DPI rounding), getBounds() would clamp
+  // against the inflated size — and it's an extra native call at 60Hz.
+  const windowWidth = getCursorIndicatorWindowWidth();
+  const windowHeight = CURSOR_INDICATOR_WINDOW_SIZE;
 
   const rawX = point.x + CURSOR_INDICATOR_OFFSET_X - CURSOR_INDICATOR_WINDOW_PADDING;
   const rawY = point.y + CURSOR_INDICATOR_OFFSET_Y - CURSOR_INDICATOR_WINDOW_PADDING;
 
-  const maxX = bounds.x + bounds.width - windowBounds.width;
-  const maxY = bounds.y + bounds.height - windowBounds.height;
+  const maxX = bounds.x + bounds.width - windowWidth;
+  const maxY = bounds.y + bounds.height - windowHeight;
 
   const x = Math.max(bounds.x, Math.min(rawX, maxX));
   const y = Math.max(bounds.y, Math.min(rawY, maxY));
@@ -831,7 +835,21 @@ function applyIndicatorPosition(point: CursorPoint) {
     return;
   }
 
-  cursorIndicatorWindow.setPosition(x, y, false);
+  // Position via setBounds WITH an explicit, fixed size. A plain setPosition
+  // inflates the window a little on every call on displays with fractional
+  // DPI scaling (Electron DIP<->pixel rounding bug), which — at ~60 calls/s
+  // from the follow loop — grows the opaque indicator window into a large
+  // black square within seconds. Reproduced: 200 calls at 112.5% scaling
+  // grew the window from 41x41 to 455x437.
+  cursorIndicatorWindow.setBounds(
+    {
+      x,
+      y,
+      width: getCursorIndicatorWindowWidth(),
+      height: CURSOR_INDICATOR_WINDOW_SIZE,
+    },
+    false,
+  );
   cursorAppliedPos = { x, y };
 }
 
