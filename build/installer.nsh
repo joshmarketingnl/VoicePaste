@@ -3,9 +3,9 @@
 ; Screen 2 (finish): done + "made by Josh" contact link.
 ;
 ; BRANDING_URL is the only place to change the contact link.
-; TODO(Josh): replace with business WhatsApp deep link, e.g.
-;   https://wa.me/316XXXXXXXX?text=Hoi%20Josh
-!define BRANDING_URL "https://smart-scale.ai"
+; Josh's business WhatsApp with a friendly prefilled opener:
+; "Hoi Josh! Ik kwam via VoicePaste. Ik wil graag vrijblijvend sparren over AI."
+!define BRANDING_URL "https://wa.me/31647569554?text=Hoi%20Josh!%20Ik%20kwam%20via%20VoicePaste.%20Ik%20wil%20graag%20vrijblijvend%20sparren%20over%20AI."
 
 !ifndef BUILD_UNINSTALLER
 Function LaunchVoicePaste
@@ -29,7 +29,7 @@ Klik op Volgende om te installeren."
   !define MUI_FINISHPAGE_RUN
   !define MUI_FINISHPAGE_RUN_TEXT "VoicePaste nu starten"
   !define MUI_FINISHPAGE_RUN_FUNCTION LaunchVoicePaste
-  !define MUI_FINISHPAGE_LINK "Gemaakt door Josh — AI-oplossingen nodig? Neem contact op."
+  !define MUI_FINISHPAGE_LINK "Gemaakt door Josh — vrijblijvend sparren over AI? App me."
   !define MUI_FINISHPAGE_LINK_LOCATION "${BRANDING_URL}"
   !insertmacro MUI_PAGE_FINISH
 !macroend
