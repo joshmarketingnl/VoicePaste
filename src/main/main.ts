@@ -23,6 +23,7 @@ import { createLogger } from './logger';
 import { StateMachine } from './stateMachine';
 import { transcribeSegments, TranscriptionTarget } from './transcription';
 import { EngineManager, EngineStatus } from './engineManager';
+import type { EngineAssetProgress } from './engineAssets';
 import { pasteTranscript } from './paste';
 import { createTrayIcon } from './trayIcon';
 import {
@@ -2044,8 +2045,30 @@ function createEngineManager(): EngineManager {
     },
     onProgress: (p) => {
       mainWindow?.webContents.send('engineProgress', p);
+      showEngineDownloadProgressWhileWaiting(p);
     },
   });
+}
+
+/**
+ * When a transcription is already queued while the engine assets are still
+ * downloading, surface the download progress in the state UI — otherwise the
+ * app looks frozen on "transcribing" during a large one-time download.
+ */
+function showEngineDownloadProgressWhileWaiting(p: EngineAssetProgress) {
+  if (stateMachine.getState() !== 'transcribing') {
+    return;
+  }
+  const dutch = config.uiLanguage === 'nl';
+  if (p.done) {
+    sendStateUpdate('transcribing', dutch ? 'Motor starten…' : 'Starting engine…');
+    return;
+  }
+  const progress = p.totalBytes > 0
+    ? `${Math.round((p.receivedBytes / p.totalBytes) * 100)}%`
+    : `${Math.round(p.receivedBytes / (1024 * 1024))} MB`;
+  const base = dutch ? 'Motor wordt eenmalig gedownload' : 'One-time engine download';
+  sendStateUpdate('transcribing', `${base}… ${progress}`);
 }
 
 /** Friendly message when the local engine isn't up yet (still downloading/starting). */

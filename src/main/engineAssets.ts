@@ -109,40 +109,90 @@ function fileAtLeast(filePath: string, minBytes: number): boolean {
   }
 }
 
-async function download(url: string, dest: string, asset: EngineAssetProgress['asset'], onProgress: ProgressFn): Promise<void> {
-  const partPath = `${dest}.part`;
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed (${asset}): HTTP ${response.status}`);
-  }
-  const totalBytes = Number(response.headers.get('content-length') ?? 0);
-  let receivedBytes = 0;
-  let lastReport = 0;
-  const stream = createWriteStream(partPath);
-  try {
-    const reader = response.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      receivedBytes += value.byteLength;
-      await new Promise<void>((resolve, reject) => {
-        stream.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()));
-      });
-      const now = Date.now();
-      if (now - lastReport >= 300) {
-        lastReport = now;
-        onProgress({ asset, receivedBytes, totalBytes, done: false });
+// A stalled connection would otherwise hang `reader.read()` forever, leaving
+// the engine in "preparing" and the app looking frozen. Abort when no data
+// arrives for a while and retry the download from scratch a few times.
+const DOWNLOAD_STALL_TIMEOUT_MS = 30_000;
+const DOWNLOAD_ATTEMPTS = 3;
+const DOWNLOAD_RETRY_DELAY_MS = 2_000;
+
+async function download(
+  url: string,
+  dest: string,
+  asset: EngineAssetProgress['asset'],
+  onProgress: ProgressFn,
+  logger: Logger,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      await downloadOnce(url, dest, asset, onProgress);
+      return;
+    } catch (error) {
+      lastError = error;
+      logger.info('Download attempt failed', { asset, attempt, error: String(error) });
+      if (attempt < DOWNLOAD_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, DOWNLOAD_RETRY_DELAY_MS));
       }
     }
-    await new Promise<void>((resolve, reject) => stream.end((err?: Error | null) => (err ? reject(err) : resolve())));
-  } catch (error) {
-    stream.destroy();
-    try { unlinkSync(partPath); } catch { /* noop */ }
-    throw error;
   }
-  try { unlinkSync(dest); } catch { /* noop */ }
-  renameSync(partPath, dest);
-  onProgress({ asset, receivedBytes, totalBytes: totalBytes || receivedBytes, done: true });
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function downloadOnce(url: string, dest: string, asset: EngineAssetProgress['asset'], onProgress: ProgressFn): Promise<void> {
+  const partPath = `${dest}.part`;
+  const controller = new AbortController();
+  let stallTimer: NodeJS.Timeout | null = null;
+  const armStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => controller.abort(), DOWNLOAD_STALL_TIMEOUT_MS);
+  };
+
+  armStallTimer();
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok || !response.body) {
+      throw new Error(`Download failed (${asset}): HTTP ${response.status}`);
+    }
+    const totalBytes = Number(response.headers.get('content-length') ?? 0);
+    let receivedBytes = 0;
+    let lastReport = 0;
+    const stream = createWriteStream(partPath);
+    try {
+      const reader = response.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        armStallTimer();
+        receivedBytes += value.byteLength;
+        await new Promise<void>((resolve, reject) => {
+          stream.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()));
+        });
+        const now = Date.now();
+        if (now - lastReport >= 300) {
+          lastReport = now;
+          onProgress({ asset, receivedBytes, totalBytes, done: false });
+        }
+      }
+      await new Promise<void>((resolve, reject) => stream.end((err?: Error | null) => (err ? reject(err) : resolve())));
+    } catch (error) {
+      stream.destroy();
+      try { unlinkSync(partPath); } catch { /* noop */ }
+      throw error;
+    }
+    try { unlinkSync(dest); } catch { /* noop */ }
+    renameSync(partPath, dest);
+    onProgress({ asset, receivedBytes, totalBytes: totalBytes || receivedBytes, done: true });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Download stalled (${asset}): no data received for ${DOWNLOAD_STALL_TIMEOUT_MS / 1000}s`,
+      );
+    }
+    throw error;
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
+  }
 }
 
 /** Resolve the CUDA binary directory, reusing a legacy install or extracting the release zip. */
@@ -167,7 +217,7 @@ async function resolveCudaBinary(logger: Logger, onProgress: ProgressFn): Promis
     mkdirSync(cudaDir, { recursive: true });
     const zipPath = path.join(engineDir(), 'whisper-cublas.zip');
     logger.info('Downloading CUDA whisper-server build');
-    await download(CUDA_ZIP_URL, zipPath, 'cuda', onProgress);
+    await download(CUDA_ZIP_URL, zipPath, 'cuda', onProgress, logger);
     // Extract with PowerShell (Windows-only path).
     const extractDir = path.join(engineDir(), 'cuda-extract');
     spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`], { timeout: 120000 });
@@ -233,7 +283,7 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     modelPath = legacyModel;
   } else {
     logger.info('Downloading speech model (one-time setup)');
-    await download(MODEL_URL, modelPath, 'model', onProgress);
+    await download(MODEL_URL, modelPath, 'model', onProgress, logger);
   }
 
   // VAD: reuse or fetch (non-fatal).
@@ -245,7 +295,7 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     vadPath = legacyVad;
   } else {
     try {
-      await download(VAD_URL, vadPath, 'vad', onProgress);
+      await download(VAD_URL, vadPath, 'vad', onProgress, logger);
     } catch (error) {
       logger.info('VAD model unavailable (non-fatal)', { error: String(error) });
       vadPath = null;
