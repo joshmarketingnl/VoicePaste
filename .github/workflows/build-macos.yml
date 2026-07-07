@@ -46,6 +46,18 @@ jobs:
           cp /tmp/whispercpp/build/bin/whisper-server resources/engine/darwin-x64/
           chmod +x resources/engine/darwin-arm64/whisper-server resources/engine/darwin-x64/whisper-server
 
+      - name: Bundle static ffmpeg (both arches)
+        # whisper-server's --convert execs ffmpeg at startup; clean Macs don't
+        # have it, so bundle a static build next to the engine binary.
+        run: |
+          for arch in arm64 amd64; do
+            dir="resources/engine/darwin-$([ "$arch" = "amd64" ] && echo x64 || echo arm64)"
+            curl -sL -o /tmp/ffmpeg-$arch.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/$arch/release/ffmpeg.zip"
+            unzip -o /tmp/ffmpeg-$arch.zip -d /tmp/ffmpeg-$arch
+            cp "$(find /tmp/ffmpeg-$arch -name ffmpeg -type f | head -1)" "$dir/ffmpeg"
+            chmod +x "$dir/ffmpeg"
+          done
+
       - name: Build & package (arm64 + x64)
         env:
           # No signing identity available — produce unsigned zips

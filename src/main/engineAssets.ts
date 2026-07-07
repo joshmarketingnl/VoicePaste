@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { spawnSync } from 'child_process';
 import {
+  chmodSync,
   copyFileSync,
   createWriteStream,
   existsSync,
@@ -237,21 +238,87 @@ async function resolveCudaBinary(logger: Logger, onProgress: ProgressFn): Promis
   return null;
 }
 
-/** Find ffmpeg (needed for webm->wav conversion): reuse legacy, bundled, or system PATH. */
-function resolveFfmpegDir(): string | null {
-  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+// Static ffmpeg builds for machines that have none. whisper-server's
+// `--convert` execs ffmpeg at startup; without it the whole engine dies with
+// "ffmpeg: command not found" — caught by the e2e smoke test on clean CI
+// machines. Windows: BtbN LGPL build; macOS: Martin Riedl static builds.
+const FFMPEG_DOWNLOAD_URLS: Partial<Record<string, string>> = {
+  'win32-x64': 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip',
+  'darwin-arm64': 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip',
+  'darwin-x64': 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip',
+};
+
+function ffmpegExeName(): string {
+  return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+}
+
+/** Find ffmpeg (needed for webm->wav conversion): bundled, downloaded, or system PATH. */
+function findFfmpeg(): { dir: string | null; available: boolean } {
+  const exe = ffmpegExeName();
   // Bundled next to the engine binaries?
   const bundled = path.join(bundledBinDir(), exe);
-  if (existsSync(bundled)) return bundledBinDir();
+  if (existsSync(bundled)) return { dir: bundledBinDir(), available: true };
   // Downloaded into engineDir?
   const downloaded = path.join(engineDir(), 'ffmpeg', exe);
-  if (existsSync(downloaded)) return path.dirname(downloaded);
+  if (existsSync(downloaded)) return { dir: path.dirname(downloaded), available: true };
   // System ffmpeg on PATH — whisper-server will find it itself.
   try {
     const res = spawnSync(exe, ['-version'], { timeout: 4000 });
-    if (res.status === 0) return null; // already on PATH
+    if (res.status === 0) return { dir: null, available: true };
   } catch { /* not on PATH */ }
+  return { dir: null, available: false };
+}
+
+function findFileRecursive(dir: string, lowerName: string): string | null {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const hit = findFileRecursive(p, lowerName);
+      if (hit) return hit;
+    } else if (entry.name.toLowerCase() === lowerName) {
+      return p;
+    }
+  }
   return null;
+}
+
+/** One-time ffmpeg download into engineDir()/ffmpeg. Returns that directory. */
+async function downloadFfmpeg(logger: Logger, onProgress: ProgressFn): Promise<string> {
+  const key = `${process.platform}-${process.arch}`;
+  const url = FFMPEG_DOWNLOAD_URLS[key];
+  if (!url) {
+    throw new Error(`No ffmpeg download available for ${key}; install ffmpeg on PATH`);
+  }
+  const destDir = path.join(engineDir(), 'ffmpeg');
+  mkdirSync(destDir, { recursive: true });
+  const zipPath = path.join(destDir, 'ffmpeg-download.zip');
+  const extractDir = path.join(destDir, 'extract');
+  logger.info('Downloading ffmpeg (one-time setup)', { url });
+  await download(url, zipPath, 'ffmpeg', onProgress, logger);
+  try {
+    rmSync(extractDir, { recursive: true, force: true });
+    if (process.platform === 'win32') {
+      const res = spawnSync(
+        'powershell',
+        ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`],
+        { timeout: 120000 },
+      );
+      if (res.status !== 0) throw new Error(`Expand-Archive failed: ${res.stderr?.toString().slice(0, 300)}`);
+    } else {
+      const res = spawnSync('unzip', ['-o', zipPath, '-d', extractDir], { timeout: 120000 });
+      if (res.status !== 0) throw new Error(`unzip failed: ${res.stderr?.toString().slice(0, 300)}`);
+    }
+    const found = findFileRecursive(extractDir, ffmpegExeName());
+    if (!found) throw new Error('ffmpeg binary not found in downloaded archive');
+    const target = path.join(destDir, ffmpegExeName());
+    copyFileSync(found, target);
+    if (process.platform !== 'win32') chmodSync(target, 0o755);
+    logger.info('ffmpeg ready', { path: target });
+    return destDir;
+  } finally {
+    try { unlinkSync(zipPath); } catch { /* noop */ }
+    try { rmSync(extractDir, { recursive: true, force: true }); } catch { /* noop */ }
+  }
 }
 
 /**
@@ -302,7 +369,20 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     }
   }
 
-  return { binaryPath, modelPath, vadPath, gpu, ffmpegDir: resolveFfmpegDir() };
+  // ffmpeg: bundled/downloaded/PATH, else fetch a static build — without it
+  // whisper-server's --convert exits at startup and nothing transcribes.
+  let ffmpeg = findFfmpeg();
+  if (!ffmpeg.available) {
+    try {
+      ffmpeg = { dir: await downloadFfmpeg(logger, onProgress), available: true };
+    } catch (error) {
+      logger.error('ffmpeg unavailable — transcription will fail until it is installed', {
+        error: String(error),
+      });
+    }
+  }
+
+  return { binaryPath, modelPath, vadPath, gpu, ffmpegDir: ffmpeg.dir };
 }
 
 /** Approx idle threads: leave headroom for the rest of the system. */

@@ -15,8 +15,61 @@ import { fileURLToPath } from 'url';
 const WHISPER_CPP_VERSION = 'v1.9.1';
 const WIN_X64_ZIP = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_VERSION}/whisper-bin-x64.zip`;
 
+// Static ffmpeg bundled next to the engine binary: whisper-server's --convert
+// execs ffmpeg at startup, and clean machines don't have it (the engine then
+// dies with "ffmpeg: command not found" — caught by the e2e smoke test).
+// Windows: BtbN LGPL build; macOS: Martin Riedl static builds.
+const FFMPEG_ZIPS = {
+  'win32-x64': 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip',
+  'darwin-arm64': 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip',
+  'darwin-x64': 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip',
+};
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const targetDir = path.join(repoRoot, 'resources', 'engine', `${process.platform}-${process.arch}`);
+
+function findFileRecursive(dir, lowerName) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const hit = findFileRecursive(p, lowerName);
+      if (hit) return hit;
+    } else if (entry.name.toLowerCase() === lowerName) {
+      return p;
+    }
+  }
+  return null;
+}
+
+async function fetchFfmpeg() {
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const dest = path.join(targetDir, exe);
+  if (existsSync(dest)) {
+    console.log(`ffmpeg already present: ${dest}`);
+    return;
+  }
+  const url = FFMPEG_ZIPS[`${process.platform}-${process.arch}`];
+  if (!url) {
+    console.warn(`No ffmpeg build known for ${process.platform}-${process.arch}; skipping`);
+    return;
+  }
+  const tmp = path.join(os.tmpdir(), `vp-ffmpeg-${Date.now()}`);
+  mkdirSync(tmp, { recursive: true });
+  const zip = path.join(tmp, 'ffmpeg.zip');
+  await downloadFile(url, zip);
+  if (process.platform === 'win32') {
+    execSync(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${zip}' -DestinationPath '${tmp}' -Force"`, { stdio: 'inherit' });
+  } else {
+    execSync(`unzip -o "${zip}" -d "${tmp}"`, { stdio: 'inherit' });
+  }
+  const found = findFileRecursive(tmp, exe);
+  if (!found) throw new Error('ffmpeg binary not found in archive');
+  mkdirSync(targetDir, { recursive: true });
+  copyFileSync(found, dest);
+  if (process.platform !== 'win32') execSync(`chmod +x "${dest}"`);
+  rmSync(tmp, { recursive: true, force: true });
+  console.log(`ffmpeg ready: ${dest}`);
+}
 
 async function downloadFile(url, dest) {
   console.log(`Downloading ${url}`);
@@ -66,6 +119,7 @@ try {
   if (process.platform === 'win32') await setupWindows();
   else if (process.platform === 'darwin' || process.platform === 'linux') setupUnixBuild();
   else throw new Error(`Unsupported platform: ${process.platform}`);
+  await fetchFfmpeg();
 } catch (e) {
   console.error(`fetch-engine failed: ${e.message}`);
   process.exit(1);

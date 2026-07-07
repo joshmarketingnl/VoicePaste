@@ -48,30 +48,24 @@ jobs:
           path: ${{ matrix.models-path }}
           key: whisper-models-large-v3-turbo-q5-${{ runner.os }}
 
-      - name: Cache macOS engine binary
+      - name: Cache macOS engine binaries (whisper-server + ffmpeg)
         if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
           path: resources/engine/darwin-arm64
-          key: whisper-server-v1.9.1-metal-arm64
+          key: whisper-server-v1.9.1-metal-arm64-ffmpeg-v2
 
-      - name: Get engine binary (Windows)
+      - name: Get engine binaries (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          if (-not (Test-Path "resources/engine/win32-x64/whisper-server.exe")) { npm run fetch-engine }
+          if (-not (Test-Path "resources/engine/win32-x64/whisper-server.exe") -or -not (Test-Path "resources/engine/win32-x64/ffmpeg.exe")) { npm run fetch-engine }
 
-      - name: Build engine binary (macOS, on cache miss)
+      - name: Get engine binaries (macOS, on cache miss)
         if: runner.os == 'macOS'
         run: |
-          if [ ! -x resources/engine/darwin-arm64/whisper-server ]; then
-            git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp /tmp/whispercpp
-            cmake -S /tmp/whispercpp -B /tmp/whispercpp/build -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DGGML_METAL_EMBED_LIBRARY=ON
-            cmake --build /tmp/whispercpp/build --config Release -j --target whisper-server
-            mkdir -p resources/engine/darwin-arm64
-            cp /tmp/whispercpp/build/bin/whisper-server resources/engine/darwin-arm64/
-            chmod +x resources/engine/darwin-arm64/whisper-server
+          if [ ! -x resources/engine/darwin-arm64/whisper-server ] || [ ! -x resources/engine/darwin-arm64/ffmpeg ]; then
+            npm run fetch-engine
           fi
 
       - name: Build app
