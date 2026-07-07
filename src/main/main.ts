@@ -2151,9 +2151,22 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
-app.whenReady().then(() => {
-  initializeApp();
-});
+// Only one VoicePaste may run at a time: a second instance (e.g. an old build
+// launched via a stale shortcut or startup entry) would fight over the global
+// hotkeys and rewrite the autostart registry key to its own — outdated — exe.
+// The second instance exits before it touches any of that; the running
+// instance responds by showing its control window.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+} else {
+  app.on('second-instance', () => {
+    handleShowControlWindow('second-instance');
+  });
+  app.whenReady().then(() => {
+    initializeApp();
+  });
+}
 
 app.on('activate', () => {
   handleShowControlWindow('app-activate');
