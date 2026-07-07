@@ -7,14 +7,20 @@
 
 ## 1. Definitie van "klaar"
 
+> **Besluit Josh (2026-07-07): gratis releasen via eigen website, zonder betaalde
+> code-signing.** Consequentie: eenmalige SmartScreen-melding op Windows ("Meer
+> informatie → Toch uitvoeren") en eenmalig rechtermuisklik→Open op macOS. Dit
+> wordt opgevangen met duidelijke installatie-instructies (+ screenshots) op de
+> downloadpagina. Signing kan later alsnog toegevoegd worden als de app groeit.
+
 De app is klaar voor publicatie als aan **alle** onderstaande exit-criteria is voldaan:
 
-- [ ] Builds zijn ondertekend (Windows-cert + Apple notarization) — geen SmartScreen/Gatekeeper-blokkade.
-- [ ] Auto-update werkt: een nieuwe release bereikt bestaande installaties automatisch.
-- [ ] E2E-rooktest draait groen op Windows + macOS bij elke wijziging op `main`.
-- [ ] Fouten bij gebruikers zijn zichtbaar: crash-/diagnoserapportage of één-klik "stuur logs".
-- [ ] 0 openstaande dependency-kwetsbaarheden; Electron-versie vastgepind.
-- [ ] Juridische basis aanwezig: third-party-licenties, privacyverklaring, EULA.
+- [ ] Downloadpagina met heldere eenmalige-waarschuwing-instructies (Windows SmartScreen + mac rechtsklik→Open), per platform het juiste bestand.
+- [ ] Auto-update op Windows; op macOS een update-melding in de app ("nieuwe versie beschikbaar → download") zolang er geen signing is (Squirrel.Mac vereist signed builds).
+- [x] E2E-rooktest draait groen op Windows + macOS bij elke wijziging op `main`. ✅ 2026-07-07
+- [ ] Fouten bij gebruikers zijn zichtbaar: één-klik "kopieer/stuur logs" in Settings.
+- [x] 0 openstaande dependency-kwetsbaarheden. ✅ 2026-07-07
+- [x] Third-party-licenties gedocumenteerd. ✅ 2026-07-07 — [ ] privacyverklaring + korte EULA op de site.
 - [ ] Beta-periode afgerond: ≥7 aaneengesloten dagen dagelijks gebruik (Josh + ≥2 vrienden, beide platforms) zonder nieuwe bug.
 
 ## 2. Waar we staan (2026-07-07)
@@ -41,16 +47,17 @@ Regel: een bugfix is pas af als er iets is dat dezelfde klasse bug in de toekoms
 
 ## 4. Werkpakketten
 
-### P0 — blockers voor publicatie
+### P0 — blockers voor publicatie (gratis route, €0)
 
 | # | Wat | Eigenaar | Inschatting |
 |---|---|---|---|
-| P0.1 | **Apple Developer Program** aanmaken ($99/jr) | **Josh** | 30 min + wachttijd |
-| P0.2 | **Windows code-signing** regelen (Azure Trusted Signing ~€9/mnd, of OV-cert) | **Josh** | 1-2 uur + verificatie-wachttijd |
-| P0.3 | Signing + **notarization** integreren in CI (mac) en build (win) | Claude | dagdeel, na P0.1/P0.2 |
-| P0.4 | **Auto-update** via electron-updater + GitHub Releases. Windows eerst; mac vereist P0.3 (Squirrel weigert unsigned) | Claude | dagdeel |
-| P0.5 | **Diagnose-rapportage**: minimaal "kopieer/verstuur log"-knop in Settings; daarna Sentry (gratis tier) voor crashes | Claude | half dagdeel / dagdeel |
-| P0.6 | ~~E2E-rooktest CI~~ ✅ + ~~dependencies naar 0~~ ✅ | Claude | klaar |
+| P0.1 | **Auto-update Windows** via electron-updater + GitHub Releases (werkt unsigned) | Claude | dagdeel |
+| P0.2 | **Update-melding macOS**: app checkt GitHub-releases en toont "nieuwe versie → download" (geen Squirrel; unsigned kan niet auto-updaten) | Claude | half dagdeel |
+| P0.3 | **Diagnose-rapportage**: "kopieer/verstuur log"-knop in Settings; daarna Sentry (gratis tier) voor crashes | Claude | half dagdeel / dagdeel |
+| P0.4 | **Downloadpagina-inhoud** incl. eenmalige-waarschuwing-instructies met screenshots (SmartScreen / rechtsklik→Open) | Claude concept → Josh op site | half dagdeel |
+| P0.5 | ~~E2E-rooktest CI~~ ✅ ~~dependencies naar 0~~ ✅ ~~third-party notices~~ ✅ | Claude | klaar |
+
+*(Betaalde signing — Apple $99/jr + Azure Trusted Signing — is bewust geparkeerd; kan later alsnog als de app tractie krijgt. Dan vervalt de eenmalige waarschuwing en kan mac ook auto-updaten.)*
 
 ### P1 — vóór de publieke download-pagina
 
@@ -78,27 +85,26 @@ Regel: een bugfix is pas af als er iets is dat dezelfde klasse bug in de toekoms
 3. Elke bug die opduikt: fixen → bewaker toevoegen (§3) → auto-update pusht de fix.
 4. **Exit-criterium:** 7 aaneengesloten dagen dagelijks gebruik zonder nieuwe bug én zonder crash-rapport → v1.0 taggen en publiceren.
 
-## 6. Kosten (jaarlijks terugkerend)
+## 6. Kosten (gratis route)
 
 | Post | Bedrag |
 |---|---|
-| Apple Developer Program | $99/jr |
-| Windows signing (Azure Trusted Signing) | ~€110/jr |
+| Code signing | €0 (bewust overgeslagen; eenmalige waarschuwing + instructie op de site) |
 | Sentry / crash-rapportage | €0 (gratis tier) |
 | GitHub (CI + releases) | €0 (publieke repo) |
-| **Totaal** | **~€210/jr** |
+| Eigen website/hosting | heeft Josh al |
+| **Totaal** | **€0** |
 
 ## 7. Volgorde van uitvoering
 
 ```
-Week 1  ├─ Josh: P0.1 + P0.2 aanvragen (wachttijden lopen dan alvast)
-        ├─ Claude: P0.4 auto-update (Windows), P0.5 log-knop, P1.2/P1.3 teksten
-Week 2  ├─ Claude: P0.3 signing-integratie zodra certs binnen zijn, dan mac auto-update
-        ├─ P1.1 installer-flow, P1.5 downloadpagina-inhoud
-        └─ Feature freeze → beta-fase start
+Week 1  ├─ Claude: P0.1 auto-update (Windows) + P0.2 update-melding (mac)
+        ├─ Claude: P0.3 log-knop, P0.4 downloadpagina-teksten, P1.3 privacyverklaring
+        └─ Josh: downloadpagina op eigen site zetten
+Week 2  ├─ Feature freeze → beta-fase met vrienden (echte downloadflow via de site)
 Week 3+ └─ 7 schone dagen → v1.0
 ```
 
 **Eerstvolgende concrete acties:**
-1. **Josh**: Apple Developer-account aanmaken (developer.apple.com) en Azure Trusted Signing starten — dit zijn de enige twee dingen die alleen jij kunt doen, en de wachttijd bepaalt de planning.
-2. **Claude**: auto-update (Windows) + "stuur logs"-knop in de volgende beta.
+1. **Claude**: auto-update (Windows) + update-melding (mac) + "stuur logs"-knop in de volgende beta.
+2. **Josh**: niets — alleen straks de downloadpagina-teksten op je site plakken.
