@@ -1,0 +1,106 @@
+name: e2e-smoke
+
+# End-to-end smoke test on clean Windows + macOS machines: launch the real
+# app, wait for the embedded engine, transcribe a spoken sentence through the
+# same endpoint the app uses, and assert the transcript. This catches the
+# integration/environment class of bugs (engine spawn, asset resolution,
+# config load, HTTP readiness) that unit tests cannot see.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'resources/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e-smoke.yml'
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            models-path: ~\AppData\Roaming\voicepaste-developer-beta-v1.1\engine\models
+            log-path: ~\AppData\Roaming\voicepaste-developer-beta-v1.1\logs\app.log
+          - os: macos-14
+            models-path: ~/Library/Application Support/voicepaste-developer-beta-v1.1/engine/models
+            log-path: ~/Library/Application Support/voicepaste-developer-beta-v1.1/logs/app.log
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Cache speech model (~550MB, one-time)
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.models-path }}
+          key: whisper-models-large-v3-turbo-q5-${{ runner.os }}
+
+      - name: Cache macOS engine binary
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: resources/engine/darwin-arm64
+          key: whisper-server-v1.9.1-metal-arm64
+
+      - name: Get engine binary (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          if (-not (Test-Path "resources/engine/win32-x64/whisper-server.exe")) { npm run fetch-engine }
+
+      - name: Build engine binary (macOS, on cache miss)
+        if: runner.os == 'macOS'
+        run: |
+          if [ ! -x resources/engine/darwin-arm64/whisper-server ]; then
+            git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp /tmp/whispercpp
+            cmake -S /tmp/whispercpp -B /tmp/whispercpp/build -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DGGML_METAL_EMBED_LIBRARY=ON
+            cmake --build /tmp/whispercpp/build --config Release -j --target whisper-server
+            mkdir -p resources/engine/darwin-arm64
+            cp /tmp/whispercpp/build/bin/whisper-server resources/engine/darwin-arm64/
+            chmod +x resources/engine/darwin-arm64/whisper-server
+          fi
+
+      - name: Build app
+        run: npm run build
+
+      - name: Generate spoken test wav (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $fmt = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
+          $s.SetOutputToWaveFile("smoke.wav", $fmt)
+          $s.Speak("The quick brown fox jumps over the lazy dog")
+          $s.Dispose()
+
+      - name: Generate spoken test wav (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          say -o smoke.aiff "The quick brown fox jumps over the lazy dog"
+          afconvert -f WAVE -d LEI16@16000 -c 1 smoke.aiff smoke.wav
+
+      - name: Run smoke test
+        run: node scripts/e2e-smoke.mjs smoke.wav
+
+      - name: Upload app log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-app-log-${{ runner.os }}
+          path: ${{ matrix.log-path }}
+          if-no-files-found: ignore
