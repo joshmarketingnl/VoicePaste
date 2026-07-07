@@ -48,7 +48,9 @@
       {
         "from": "resources/engine",
         "to": "engine",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
@@ -68,6 +70,16 @@
         "zip"
       ]
     },
-    "asar": true
+    "asar": true,
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "nl_NL"
+      ],
+      "include": "build/installer.nsh"
+    }
   }
 }
