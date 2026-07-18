@@ -1,6 +1,6 @@
 {
   "name": "voicepaste-developer-beta-v1.1",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "description": "Local hotkey recording + transcription + paste utility.",
   "main": "dist/main/main.js",
