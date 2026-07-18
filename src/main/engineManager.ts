@@ -110,6 +110,10 @@ export class EngineManager {
         '--port', String(port),
         '--convert',
         '--inference-path', '/v1/audio/transcriptions',
+        // Break internal segments on word boundaries; without this the server
+        // can split a segment mid-word ("zod\nat") and the newline-to-space
+        // normalisation in joinTranscriptParts turns that into "zod at".
+        '--split-on-word',
       ];
       if (useVad && resolved.vadPath) {
         args.push('--vad', '--vad-model', resolved.vadPath);
