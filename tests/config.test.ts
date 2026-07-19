@@ -69,4 +69,14 @@ describe('isLocalProvider', () => {
     expect(isLocalProvider('https://example.com/v1')).toBe(false);
     expect(isLocalProvider('not a url')).toBe(false);
   });
+
+  it('defaults engine idle sleep to 15 minutes and sanitises overrides', () => {
+    expect(defaultConfigForPlatform('win32').engineIdleSleepMinutes).toBe(15);
+    expect(mergeConfig({}, 'win32').engineIdleSleepMinutes).toBe(15);
+    expect(mergeConfig({ engineIdleSleepMinutes: 0 }, 'win32').engineIdleSleepMinutes).toBe(0);
+    expect(mergeConfig({ engineIdleSleepMinutes: 30 }, 'win32').engineIdleSleepMinutes).toBe(30);
+    expect(mergeConfig({ engineIdleSleepMinutes: -5 }, 'win32').engineIdleSleepMinutes).toBe(15);
+    expect(mergeConfig({ engineIdleSleepMinutes: 99999 }, 'win32').engineIdleSleepMinutes).toBe(1440);
+    expect(mergeConfig({ engineIdleSleepMinutes: 'nooit' as never }, 'win32').engineIdleSleepMinutes).toBe(15);
+  });
 });

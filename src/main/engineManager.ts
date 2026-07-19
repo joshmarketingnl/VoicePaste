@@ -31,14 +31,23 @@ export class EngineManager {
   private lastError: string | null = null;
   private onProgress: ProgressFn;
   private onStatusChange: (status: EngineStatus) => void;
+  private idleSleepMs: number;
+  private idleTimer: NodeJS.Timeout | null = null;
 
   constructor(
     logger: Logger,
-    hooks: { onProgress?: ProgressFn; onStatusChange?: (status: EngineStatus) => void } = {},
+    hooks: {
+      onProgress?: ProgressFn;
+      onStatusChange?: (status: EngineStatus) => void;
+      /** Sleep (kill whisper-server, freeing the model memory) after this many
+       *  ms without transcriptions; 0 = never. ensureReady() wakes it again. */
+      idleSleepMs?: number;
+    } = {},
   ) {
     this.logger = logger;
     this.onProgress = hooks.onProgress ?? (() => {});
     this.onStatusChange = hooks.onStatusChange ?? (() => {});
+    this.idleSleepMs = hooks.idleSleepMs ?? 0;
   }
 
   getStatus(): EngineStatus {
@@ -67,6 +76,7 @@ export class EngineManager {
    */
   async ensureReady(): Promise<void> {
     if (this.disposed) throw new Error('EngineManager disposed');
+    this.touchIdleTimer();
     if (this.proc && this.port && this.status === 'ready') return;
     if (!this.startPromise) {
       this.startPromise = this.start().finally(() => {
@@ -74,6 +84,34 @@ export class EngineManager {
       });
     }
     return this.startPromise;
+  }
+
+  private touchIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (this.idleSleepMs > 0 && !this.disposed) {
+      this.idleTimer = setTimeout(() => this.sleep(), this.idleSleepMs);
+      this.idleTimer.unref?.();
+    }
+  }
+
+  /** Stop whisper-server after a stretch without transcriptions, returning the
+   *  ~2GB of model memory to the system. The next ensureReady() respawns it
+   *  from the already-resolved assets (a few seconds, no re-download). */
+  private sleep(): void {
+    if (this.disposed || !this.proc || this.status !== 'ready') return;
+    this.logger.info('Engine sleeping after inactivity — freeing model memory', {
+      idleMinutes: Math.round(this.idleSleepMs / 60000),
+    });
+    this.setStatus('stopped');
+    try {
+      this.proc.removeAllListeners();
+      this.proc.kill();
+    } catch { /* already dead */ }
+    this.proc = null;
+    this.port = null;
   }
 
   private async start(): Promise<void> {
@@ -90,6 +128,7 @@ export class EngineManager {
       this.restarts = 0;
       this.lastError = null;
       this.setStatus('ready');
+      this.touchIdleTimer();
       this.logger.info('Local engine ready', { port, gpu: this.resolved.gpu });
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
@@ -210,6 +249,10 @@ export class EngineManager {
 
   dispose(): void {
     this.disposed = true;
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
     this.setStatus('stopped');
     if (this.proc) {
       this.logger.info('Stopping local engine');

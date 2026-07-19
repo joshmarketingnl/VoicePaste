@@ -53,6 +53,7 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
     indicator: 'showAlways',
     indicatorStyle: 'dot',
     diagnostics: false,
+    engineIdleSleepMinutes: 15,
   };
 }
 
@@ -133,6 +134,12 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
     indicator: isIndicatorMode(input.indicator) ? input.indicator : defaults.indicator,
     indicatorStyle: isIndicatorStyle(input.indicatorStyle) ? input.indicatorStyle : defaults.indicatorStyle,
     diagnostics: typeof input.diagnostics === 'boolean' ? input.diagnostics : defaults.diagnostics,
+    engineIdleSleepMinutes:
+      typeof input.engineIdleSleepMinutes === 'number' &&
+      Number.isFinite(input.engineIdleSleepMinutes) &&
+      input.engineIdleSleepMinutes >= 0
+        ? Math.min(1440, Math.round(input.engineIdleSleepMinutes))
+        : defaults.engineIdleSleepMinutes,
     apiKey: typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined,
   };
 }

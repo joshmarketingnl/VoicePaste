@@ -2017,6 +2017,11 @@ async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
     if (!engineManager) {
       engineManager = createEngineManager();
     }
+    if (engineManager.getStatus() !== 'ready') {
+      // Sleeping (or still starting) engine: give the user a hint that the
+      // few-second wait is the engine waking up, not a hang.
+      sendStateUpdate('transcribing', config.uiLanguage === 'nl' ? 'Motor wordt wakker…' : 'Waking the engine…');
+    }
     await engineManager.ensureReady();
     const baseUrl = engineManager.getBaseUrl();
     if (!baseUrl) {
@@ -2039,6 +2044,7 @@ async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
 
 function createEngineManager(): EngineManager {
   return new EngineManager(logger, {
+    idleSleepMs: Math.max(0, config.engineIdleSleepMinutes ?? 0) * 60_000,
     onStatusChange: (status: EngineStatus) => {
       logger.info('Engine status', { status });
       mainWindow?.webContents.send('engineStatus', { status });

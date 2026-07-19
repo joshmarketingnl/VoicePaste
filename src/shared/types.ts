@@ -29,5 +29,9 @@ export interface AppConfig {
   indicator: IndicatorMode;
   indicatorStyle: IndicatorStyle;
   diagnostics: boolean;
+  /** Minutes of inactivity before the local engine sleeps to free the ~2GB
+   *  model memory (0 = keep it loaded forever). Waking adds a few seconds to
+   *  the first dictation after a pause. */
+  engineIdleSleepMinutes: number;
   apiKey?: string;
 }
