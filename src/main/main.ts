@@ -1737,6 +1737,20 @@ function setupIpcHandlers() {
   ipcMain.handle('beginRecordingSession', () => {
     const session = ensureSessionDir();
     logger.info('Recording session created', { sessionId: session.id });
+    // Pre-wake the (possibly sleeping) local engine while the user is still
+    // talking: recording time doubles as engine warm-up, so stop+transcribe
+    // doesn't have to wait the few seconds a wake-from-sleep takes.
+    if (config.engine === 'local') {
+      if (!engineManager) {
+        engineManager = createEngineManager();
+      }
+      if (engineManager.getStatus() !== 'ready') {
+        logger.info('Waking engine at recording start');
+      }
+      engineManager.ensureReady().catch((error) => {
+        logger.info('Engine wake at recording start deferred', { error: String(error) });
+      });
+    }
     return session.id;
   });
 
