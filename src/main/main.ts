@@ -310,12 +310,9 @@ function sendStateUpdate(state: AppState, message?: string, preview?: string) {
     return;
   }
 
-  if (state === 'ready' && !pasteQueuedAfterTranscription) {
-    const body = preview ? `Ready to paste: ${preview}` : message ?? 'Transcript ready to paste.';
-    notifyBackgroundStatus('VoicePaste ready', body, 'info');
-    return;
-  }
-
+  // No success notification: a balloon (with sound) on every recording that
+  // isn't pasted straight away is noise — the cursor indicator already shows
+  // the ready state. Errors still notify, because those need attention.
   if (state === 'error' && message) {
     notifyBackgroundStatus('VoicePaste error', message, 'error');
   }
