@@ -24,7 +24,7 @@ import { StateMachine } from './stateMachine';
 import { transcribeSegments, TranscriptionTarget } from './transcription';
 import { EngineManager, EngineStatus } from './engineManager';
 import type { EngineAssetProgress } from './engineAssets';
-import { pasteTranscript } from './paste';
+import { pasteTranscript, shutdownPasteHelper } from './paste';
 import { createTrayIcon } from './trayIcon';
 import {
   getCursorIndicatorAlwaysOnTopLevel,
@@ -1428,8 +1428,12 @@ async function handlePaste() {
   }
 
   try {
-    await pasteTranscript(lastTranscript, { restoreClipboard: config.restoreClipboard, restoreDelayMs: 800 });
-    logger.info('Paste triggered');
+    const startedAt = Date.now();
+    // 1500ms: the target app needs time to actually process the ^v before we
+    // put the old clipboard back — at 800ms a busy app could paste the
+    // restored (old) content instead of the transcript.
+    await pasteTranscript(lastTranscript, { restoreClipboard: config.restoreClipboard, restoreDelayMs: 1500 });
+    logger.info('Paste triggered', { keystrokeMs: Date.now() - startedAt });
 
     if (stateMachine.getState() === 'ready') {
       clearReadyIndicatorTimer();
@@ -2176,6 +2180,7 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {});
 
 app.on('will-quit', () => {
+  shutdownPasteHelper();
   engineManager?.dispose();
   engineManager = null;
   clearQueuedPaste('will-quit');
