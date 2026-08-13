@@ -1432,8 +1432,11 @@ async function handlePaste() {
     // 1500ms: the target app needs time to actually process the ^v before we
     // put the old clipboard back — at 800ms a busy app could paste the
     // restored (old) content instead of the transcript.
-    await pasteTranscript(lastTranscript, { restoreClipboard: config.restoreClipboard, restoreDelayMs: 1500 });
-    logger.info('Paste triggered', { keystrokeMs: Date.now() - startedAt });
+    const modifierWaitMs = await pasteTranscript(lastTranscript, {
+      restoreClipboard: config.restoreClipboard,
+      restoreDelayMs: 1500,
+    });
+    logger.info('Paste triggered', { keystrokeMs: Date.now() - startedAt, modifierWaitMs });
 
     if (stateMachine.getState() === 'ready') {
       clearReadyIndicatorTimer();

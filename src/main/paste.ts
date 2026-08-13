@@ -29,6 +29,12 @@ function runCommand(command: string, args: string[]): Promise<void> {
  */
 const HELPER_SCRIPT = [
   '$ErrorActionPreference = "Stop"',
+  // The paste hotkey itself holds modifiers down (Win+Alt+V). Sending ^v while
+  // they are still physically pressed makes the target see Win+Alt+Ctrl+V,
+  // which is not paste — the transcript silently stays on the clipboard. Wait
+  // for the user to let go first (bounded, so a stuck key can't block pasting).
+  'Add-Type -Name Vp -Namespace Native -MemberDefinition \'[DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);\'',
+  '$mods = @(0x10, 0x11, 0x12, 0x5B, 0x5C)', // shift, ctrl, alt, lwin, rwin
   '$w = New-Object -ComObject WScript.Shell',
   '[Console]::Out.WriteLine("ready")',
   '[Console]::Out.Flush()',
@@ -36,14 +42,24 @@ const HELPER_SCRIPT = [
   '  $line = [Console]::In.ReadLine()',
   '  if ($null -eq $line) { break }',
   '  if ($line -eq "paste") {',
+  '    $waited = 0',
+  '    while ($waited -lt 2000) {',
+  '      $down = $false',
+  '      foreach ($k in $mods) { if (([Native.Vp]::GetAsyncKeyState($k) -band 0x8000) -ne 0) { $down = $true; break } }',
+  '      if (-not $down) { break }',
+  '      Start-Sleep -Milliseconds 15',
+  '      $waited += 15',
+  '    }',
+  '    Start-Sleep -Milliseconds 25', // let the target process the key-ups first
   '    $w.SendKeys("^v")',
-  '    [Console]::Out.WriteLine("ok")',
+  '    [Console]::Out.WriteLine("ok $waited")',
   '    [Console]::Out.Flush()',
   '  }',
   '}',
 ].join('; ');
 
 const HELPER_ACK_TIMEOUT_MS = 1_500;
+const MODIFIER_WAIT_MAX_MS = 2_000;
 
 let helper: ChildProcess | null = null;
 let helperReady: Promise<void> | null = null;
@@ -94,10 +110,11 @@ function ensureHelper(): Promise<void> {
   return helperReady;
 }
 
-function pasteViaHelper(): Promise<void> {
+/** Resolves with the ms spent waiting for the hotkey's modifiers to be released. */
+function pasteViaHelper(): Promise<number> {
   return ensureHelper().then(
     () =>
-      new Promise<void>((resolve, reject) => {
+      new Promise<number>((resolve, reject) => {
         const proc = helper;
         if (!proc?.stdin || !proc.stdout) {
           reject(new Error('Paste helper unavailable'));
@@ -106,12 +123,13 @@ function pasteViaHelper(): Promise<void> {
         const timer = setTimeout(() => {
           proc.stdout?.off('data', onData);
           reject(new Error('Paste helper timed out'));
-        }, HELPER_ACK_TIMEOUT_MS);
+        }, HELPER_ACK_TIMEOUT_MS + MODIFIER_WAIT_MAX_MS);
         const onData = (chunk: Buffer) => {
-          if (chunk.toString().includes('ok')) {
+          const match = /ok (\d+)/.exec(chunk.toString());
+          if (match) {
             clearTimeout(timer);
             proc.stdout?.off('data', onData);
-            resolve();
+            resolve(Number(match[1]));
           }
         };
         proc.stdout.on('data', onData);
@@ -120,28 +138,41 @@ function pasteViaHelper(): Promise<void> {
   );
 }
 
-async function triggerPasteKeystroke(): Promise<void> {
+/** One-shot fallback: same modifier wait, but pays the PowerShell startup cost. */
+const FALLBACK_SCRIPT = [
+  'Add-Type -Name Vp -Namespace Native -MemberDefinition \'[DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);\'',
+  '$waited = 0',
+  'while ($waited -lt 2000) {',
+  '  $down = $false',
+  '  foreach ($k in @(0x10, 0x11, 0x12, 0x5B, 0x5C)) { if (([Native.Vp]::GetAsyncKeyState($k) -band 0x8000) -ne 0) { $down = $true; break } }',
+  '  if (-not $down) { break }',
+  '  Start-Sleep -Milliseconds 15',
+  '  $waited += 15',
+  '}',
+  'Start-Sleep -Milliseconds 25',
+  '$wshell = New-Object -ComObject WScript.Shell',
+  "$wshell.SendKeys('^v')",
+].join('; ');
+
+/** Resolves with the ms spent waiting for modifiers, or null when not measured. */
+async function triggerPasteKeystroke(): Promise<number | null> {
   if (process.platform === 'darwin') {
     await runCommand('osascript', [
       '-e',
       'tell application "System Events" to keystroke "v" using command down',
     ]);
-    return;
+    return null;
   }
   if (process.platform === 'win32') {
     try {
-      await pasteViaHelper();
+      return await pasteViaHelper();
     } catch {
       // Helper wedged or killed (antivirus, policy) — fall back to the
       // one-shot spawn so a paste never fails just because of the helper.
       disposeHelper();
-      await runCommand('powershell', [
-        '-NoProfile',
-        '-Command',
-        "$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys('^v')",
-      ]);
+      await runCommand('powershell', ['-NoProfile', '-Command', FALLBACK_SCRIPT]);
+      return null;
     }
-    return;
   }
 
   throw new Error('Paste automation not supported on this platform');
@@ -160,11 +191,11 @@ export function shutdownPasteHelper(): void {
   disposeHelper();
 }
 
-export async function pasteTranscript(text: string, options: PasteOptions): Promise<void> {
+export async function pasteTranscript(text: string, options: PasteOptions): Promise<number | null> {
   const previousText = clipboard.readText();
   clipboard.writeText(text);
 
-  await triggerPasteKeystroke();
+  const modifierWaitMs = await triggerPasteKeystroke();
 
   if (options.restoreClipboard) {
     setTimeout(() => {
@@ -173,4 +204,6 @@ export async function pasteTranscript(text: string, options: PasteOptions): Prom
       }
     }, options.restoreDelayMs);
   }
+
+  return modifierWaitMs;
 }
