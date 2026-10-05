@@ -313,6 +313,12 @@ body {
   scrollbar-gutter: stable;
 }
 
+/* The panel scrolls; its rows must never be squeezed to fit, or a two-line
+   hint overlaps the label below it. */
+.settings-panel > * {
+  flex-shrink: 0;
+}
+
 .settings-panel[hidden] {
   display: none;
 }
