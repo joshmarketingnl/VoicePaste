@@ -48,7 +48,7 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
     model: DEFAULT_MODEL,
     developerMode: false,
     uiLanguage: 'en',
-    languageMode: 'auto',
+    languageMode: 'nl-en',
     restoreClipboard: true,
     indicator: 'showAlways',
     indicatorStyle: 'dot',
@@ -68,7 +68,7 @@ export function isLocalProvider(provider: string): boolean {
 }
 
 function isLanguageMode(value: unknown): value is LanguageMode {
-  return value === 'auto' || value === 'en' || value === 'nl' || value === 'es';
+  return value === 'nl-en' || value === 'en' || value === 'nl' || value === 'es';
 }
 
 function isIndicatorMode(value: unknown): value is IndicatorMode {
@@ -129,6 +129,8 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
     model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : defaults.model,
     developerMode: typeof input.developerMode === 'boolean' ? input.developerMode : defaults.developerMode,
     uiLanguage: isUiLanguage(input.uiLanguage) ? input.uiLanguage : defaults.uiLanguage,
+    // A deliberate single language (nl/en/es) is kept; the legacy 'auto' and
+    // anything missing or unknown becomes 'nl-en'. Nothing else is touched.
     languageMode: isLanguageMode(input.languageMode) ? input.languageMode : defaults.languageMode,
     restoreClipboard: typeof input.restoreClipboard === 'boolean' ? input.restoreClipboard : defaults.restoreClipboard,
     indicator: isIndicatorMode(input.indicator) ? input.indicator : defaults.indicator,

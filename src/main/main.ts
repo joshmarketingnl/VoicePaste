@@ -14,7 +14,7 @@ import {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { AppConfig, AppState, HotkeyId, HotkeysConfig, IndicatorStyle, TranscriptionEngine } from '../shared/types';
+import { AppConfig, AppState, HotkeyId, HotkeysConfig, IndicatorStyle, LanguageMode, TranscriptionEngine } from '../shared/types';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../shared/config';
 import { buildPreview } from '../shared/transcript';
 import { Logger } from '../shared/logger';
@@ -25,6 +25,7 @@ import { transcribeSegments, TranscriptionTarget } from './transcription';
 import { EngineManager, EngineStatus } from './engineManager';
 import type { EngineAssetProgress } from './engineAssets';
 import { pasteTranscript, shutdownPasteHelper } from './paste';
+import { getUpdateStatus, installUpdateNow, openDownloadPage, startUpdater, UpdateStatus } from './updater';
 import { createTrayIcon } from './trayIcon';
 import {
   getCursorIndicatorAlwaysOnTopLevel,
@@ -52,6 +53,7 @@ interface SettingsPayload {
   uiLanguage: UiLanguage;
   indicatorStyle: IndicatorStyle;
   engine: TranscriptionEngine;
+  languageMode?: LanguageMode;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -63,6 +65,7 @@ interface SettingsResponse {
   uiLanguage: UiLanguage;
   indicatorStyle: IndicatorStyle;
   engine: TranscriptionEngine;
+  languageMode: LanguageMode;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -146,6 +149,8 @@ let activeTranscriptionJobs = 0;
 let indicatorHiddenByUser = false;
 let hasShownOnLaunch = false;
 let isQuitting = false;
+// Last dictation activity; auto-updates only install after a stretch without any.
+let lastActivityAt = Date.now();
 let settingsWindowExpanded = false;
 let settingsWindowDeveloperMode = false;
 
@@ -238,6 +243,7 @@ function getSettingsResponse(): SettingsResponse {
     uiLanguage: config.uiLanguage,
     indicatorStyle: config.indicatorStyle,
     engine: config.engine,
+    languageMode: config.languageMode,
     providerCode: config.provider,
     modelCode: config.model,
     apiKey: config.apiKey ?? '',
@@ -252,6 +258,7 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
     (payload.uiLanguage !== 'en' && payload.uiLanguage !== 'nl') ||
     (payload.indicatorStyle !== 'dot' && payload.indicatorStyle !== 'detailed') ||
     (payload.engine !== 'local' && payload.engine !== 'openai' && payload.engine !== 'custom') ||
+    (payload.languageMode !== undefined && !['nl-en', 'nl', 'en', 'es'].includes(payload.languageMode)) ||
     typeof payload.providerCode !== 'string' ||
     typeof payload.modelCode !== 'string' ||
     typeof payload.apiKey !== 'string'
@@ -1140,12 +1147,43 @@ function getTrayPrimaryAction(): MenuItemConstructorOptions {
   };
 }
 
+function getTrayUpdateItems(): MenuItemConstructorOptions[] {
+  const update = getUpdateStatus();
+  if (update.kind === 'ready') {
+    return [
+      { label: `Install update ${update.version} and restart`, click: () => installUpdateNow('tray') },
+      { type: 'separator' },
+    ];
+  }
+  if (update.kind === 'available') {
+    return [
+      { label: `Download VoicePaste ${update.version}`, click: () => openDownloadPage() },
+      { type: 'separator' },
+    ];
+  }
+  return [];
+}
+
+function handleUpdateStatusChange(update: UpdateStatus) {
+  updateTrayMenu();
+  // macOS can't self-update unsigned: tell the user once where to get it.
+  if (update.kind === 'available' && Notification.isSupported()) {
+    const notification = new Notification({
+      title: 'VoicePaste',
+      body: `Version ${update.version} is available. Click to download.`,
+    });
+    notification.on('click', () => openDownloadPage());
+    notification.show();
+  }
+}
+
 function updateTrayMenu() {
   if (!tray) {
     return;
   }
 
   const menuTemplate: MenuItemConstructorOptions[] = [
+    ...getTrayUpdateItems(),
     {
       label: mainWindow?.isVisible() ? 'Hide VoicePaste' : 'Show VoicePaste',
       click: () => {
@@ -1911,6 +1949,7 @@ function setupIpcHandlers() {
       uiLanguage: payload.uiLanguage,
       indicatorStyle: payload.indicatorStyle,
       engine,
+      languageMode: payload.languageMode ?? config.languageMode,
       // provider/model only matter for the 'custom' engine; for local/openai
       // they stay at sensible defaults and are never used to override the engine.
       provider: engine === 'custom' && payload.providerCode.trim() ? payload.providerCode.trim() : DEFAULT_PROVIDER,
@@ -1963,6 +2002,7 @@ function setupIpcHandlers() {
       uiLanguage: config.uiLanguage,
       indicatorStyle: config.indicatorStyle,
       engine: config.engine,
+      languageMode: config.languageMode,
       provider: config.provider,
       model: config.model,
       hotkeys: config.hotkeys,
@@ -2142,6 +2182,7 @@ function initializeApp() {
   attachProcessErrorHandlers();
 
   stateMachine = new StateMachine('idle', logger, (change) => {
+    lastActivityAt = Date.now();
     updateIndicatorVisibility(change.next);
     updateCursorIndicatorForState(change.next, 'state-change');
     updateTrayMenu();
@@ -2165,6 +2206,21 @@ function initializeApp() {
   updateIndicatorVisibility('idle');
   updateCursorIndicatorForState('idle', 'initialize');
   updateTrayMenu();
+
+  startUpdater({
+    logger,
+    isQuiet: (quietForMs) => {
+      const state = stateMachine.getState();
+      if (state === 'recording' || state === 'transcribing' || mainWindow?.isVisible()) {
+        return false;
+      }
+      return Date.now() - lastActivityAt >= quietForMs;
+    },
+    onStatusChange: handleUpdateStatusChange,
+    beforeInstall: () => {
+      isQuitting = true;
+    },
+  });
 
   // Warm up the embedded engine in the background so the first dictation is
   // instant. Failures are non-fatal here — they surface on the first attempt.
@@ -2204,15 +2260,36 @@ app.on('will-quit', () => {
 // hotkeys and rewrite the autostart registry key to its own — outdated — exe.
 // The second instance exits before it touches any of that; the running
 // instance responds by showing its control window.
+// Startup is logged before the normal logger exists: a crash in early init
+// (or a relaunch that never gets going, e.g. right after an auto-update) would
+// otherwise leave no trace at all.
+function bootLog(message: string, meta?: Record<string, unknown>) {
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const metaText = meta ? ` ${JSON.stringify(meta)}` : '';
+    fs.appendFileSync(path.join(logDir, 'app.log'), `${new Date().toISOString()} [INFO] ${message}${metaText}\n`, 'utf8');
+  } catch {
+    // Logging must never stop the app from starting.
+  }
+}
+
+bootLog('Process started', { version: app.getVersion(), args: process.argv.slice(1) });
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
+  bootLog('Another instance holds the lock; exiting');
   app.exit(0);
 } else {
   app.on('second-instance', () => {
     handleShowControlWindow('second-instance');
   });
   app.whenReady().then(() => {
-    initializeApp();
+    try {
+      initializeApp();
+    } catch (error) {
+      bootLog('Startup failed', { error: error instanceof Error ? error.stack ?? error.message : String(error) });
+      throw error;
+    }
   });
 }
 

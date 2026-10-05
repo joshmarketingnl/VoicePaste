@@ -1,6 +1,6 @@
 {
   "name": "voicepaste-developer-beta-v1.1",
-  "version": "2.2.4",
+  "version": "2.3.0",
   "private": true,
   "description": "Local hotkey recording + transcription + paste utility.",
   "main": "dist/main/main.js",
@@ -20,6 +20,7 @@
     "package:win:all": "npm run build && electron-builder --win nsis zip --x64 --arm64"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "openai": "^4.77.0"
   },
   "devDependencies": {
@@ -81,7 +82,15 @@
       "installerLanguages": [
         "nl_NL"
       ],
-      "include": "build/installer.nsh"
-    }
+      "include": "build/installer.nsh",
+      "artifactName": "VoicePaste-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "joshmarketingnl",
+        "repo": "VoicePaste"
+      }
+    ]
   }
 }

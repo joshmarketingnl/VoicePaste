@@ -72,7 +72,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: voicepaste-macos
-          path: release/*.zip
+          # latest-mac.yml lets the app notice a new version (macOS can't
+          # self-install unsigned builds, but it can tell the user).
+          path: |
+            release/*.zip
+            release/latest-mac.yml
 
   build-win:
     runs-on: windows-latest
@@ -110,6 +114,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: voicepaste-windows
+          # latest.yml + blockmap are what electron-updater reads to self-update.
           path: |
             release/*.zip
             release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml

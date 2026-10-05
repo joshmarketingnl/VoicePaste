@@ -48,7 +48,10 @@ export function loadConfig(): LoadedConfig {
   let parsed: Partial<AppConfig> | null = null;
   if (fs.existsSync(configPath)) {
     try {
-      const raw = fs.readFileSync(configPath, 'utf8');
+      // Strip a UTF-8 BOM: editors and PowerShell's Set-Content add one, and
+      // JSON.parse would then fail and silently fall back to defaults — the
+      // next settings save would wipe the user's API key and hotkeys.
+      const raw = fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '');
       parsed = JSON.parse(raw) as Partial<AppConfig>;
     } catch {
       parsed = null;

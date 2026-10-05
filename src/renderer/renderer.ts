@@ -16,12 +16,14 @@ type UiLanguage = 'en' | 'nl';
 type StatusTone = 'neutral' | 'error' | 'success';
 
 type TranscriptionEngine = 'local' | 'openai' | 'custom';
+type LanguageMode = 'nl-en' | 'nl' | 'en' | 'es';
 
 interface RendererSettings {
   developerMode: boolean;
   uiLanguage: UiLanguage;
   indicatorStyle: 'dot' | 'detailed';
   engine: TranscriptionEngine;
+  languageMode: LanguageMode;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -60,6 +62,12 @@ const engineHint = document.getElementById('engineHint') as HTMLElement;
 const engineOptionLocal = document.getElementById('engineOptionLocal') as HTMLOptionElement;
 const engineOptionOpenai = document.getElementById('engineOptionOpenai') as HTMLOptionElement;
 const engineOptionCustom = document.getElementById('engineOptionCustom') as HTMLOptionElement;
+const languageModeLabel = document.getElementById('languageModeLabel') as HTMLElement;
+const languageModeSelect = document.getElementById('languageModeSelect') as HTMLSelectElement;
+const languageModeOptionNlEn = document.getElementById('languageModeOptionNlEn') as HTMLOptionElement;
+const languageModeOptionNl = document.getElementById('languageModeOptionNl') as HTMLOptionElement;
+const languageModeOptionEn = document.getElementById('languageModeOptionEn') as HTMLOptionElement;
+const languageModeOptionEs = document.getElementById('languageModeOptionEs') as HTMLOptionElement;
 const developerProviderField = document.getElementById('developerProviderField') as HTMLElement;
 const developerModelField = document.getElementById('developerModelField') as HTMLElement;
 const providerCodeLabel = document.getElementById('providerCodeLabel') as HTMLElement;
@@ -154,6 +162,7 @@ let settingsDraft: RendererSettings = {
   uiLanguage: 'en',
   indicatorStyle: 'dot',
   engine: 'local',
+  languageMode: 'nl-en',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -164,6 +173,7 @@ let settingsCommitted: RendererSettings = {
   uiLanguage: 'en',
   indicatorStyle: 'dot',
   engine: 'local',
+  languageMode: 'nl-en',
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -215,6 +225,8 @@ const UI_TEXT: Record<
     engineOptionOpenai: string;
     engineOptionCustom: string;
     engineHint: Record<'local' | 'openai' | 'custom', string>;
+    languageModeLabel: string;
+    languageModeOptions: Record<LanguageMode, string>;
     providerCode: string;
     modelCode: string;
     openAiApiKey: string;
@@ -266,6 +278,13 @@ const UI_TEXT: Record<
       openai: 'Uses the OpenAI cloud API (an API key is required).',
       custom: 'Send audio to your own OpenAI-compatible endpoint.',
     },
+    languageModeLabel: 'Spoken language',
+    languageModeOptions: {
+      'nl-en': 'Dutch + English (recommended)',
+      nl: 'Dutch only',
+      en: 'English only',
+      es: 'Spanish only',
+    },
     providerCode: 'Provider code',
     modelCode: 'Model code',
     openAiApiKey: 'OpenAI API key',
@@ -315,6 +334,13 @@ const UI_TEXT: Record<
       local: 'Draait op je apparaat — niets te starten, geen API-sleutel, werkt offline.',
       openai: 'Gebruikt de OpenAI cloud-API (API-sleutel vereist).',
       custom: 'Stuurt audio naar je eigen OpenAI-compatibele endpoint.',
+    },
+    languageModeLabel: 'Gesproken taal',
+    languageModeOptions: {
+      'nl-en': 'Nederlands + Engels (aanbevolen)',
+      nl: 'Alleen Nederlands',
+      en: 'Alleen Engels',
+      es: 'Alleen Spaans',
     },
     providerCode: 'Provider-code',
     modelCode: 'Model-code',
@@ -391,6 +417,7 @@ function cloneSettings(settings: RendererSettings): RendererSettings {
     uiLanguage: settings.uiLanguage,
     indicatorStyle: settings.indicatorStyle,
     engine: settings.engine,
+    languageMode: settings.languageMode,
     providerCode: settings.providerCode,
     modelCode: settings.modelCode,
     apiKey: settings.apiKey,
@@ -478,6 +505,11 @@ function applyLocalizedLabels() {
   engineOptionLocal.textContent = uiText.engineOptionLocal;
   engineOptionOpenai.textContent = uiText.engineOptionOpenai;
   engineOptionCustom.textContent = uiText.engineOptionCustom;
+  languageModeLabel.textContent = uiText.languageModeLabel;
+  languageModeOptionNlEn.textContent = uiText.languageModeOptions['nl-en'];
+  languageModeOptionNl.textContent = uiText.languageModeOptions.nl;
+  languageModeOptionEn.textContent = uiText.languageModeOptions.en;
+  languageModeOptionEs.textContent = uiText.languageModeOptions.es;
   engineHint.textContent = uiText.engineHint[(engineSelect.value as TranscriptionEngine) || 'local'];
   providerCodeLabel.textContent = uiText.providerCode;
   modelCodeLabel.textContent = uiText.modelCode;
@@ -541,6 +573,7 @@ function syncSettingsDraftFromInputs() {
     developerMode: developerModeInput.checked,
     indicatorStyle: indicatorStyleInput.checked ? 'detailed' : 'dot',
     engine: (engineSelect.value as TranscriptionEngine) || 'local',
+    languageMode: (languageModeSelect.value as LanguageMode) || 'nl-en',
     providerCode: providerCodeInput.value,
     modelCode: modelCodeInput.value,
     apiKey: apiKeyInput.value,
@@ -834,6 +867,9 @@ function applySettingsToView(settings: RendererSettings) {
   developerModeInput.checked = settingsDraft.developerMode;
   indicatorStyleInput.checked = settingsDraft.indicatorStyle === 'detailed';
   engineSelect.value = settingsDraft.engine;
+  // Spanish stays available for whoever already chose it, but isn't offered.
+  languageModeOptionEs.hidden = settingsDraft.languageMode !== 'es';
+  languageModeSelect.value = settingsDraft.languageMode;
   providerCodeInput.value = settingsDraft.providerCode;
   modelCodeInput.value = settingsDraft.modelCode;
   apiKeyInput.value = settingsDraft.apiKey;
@@ -999,6 +1035,7 @@ async function saveSettingsFromUi(successMessage: string): Promise<boolean> {
     uiLanguage: settingsDraft.uiLanguage,
     indicatorStyle: settingsDraft.indicatorStyle,
     engine: settingsDraft.engine,
+    languageMode: settingsDraft.languageMode,
     providerCode: settingsDraft.providerCode,
     modelCode: settingsDraft.modelCode,
     apiKey: apiKeyInput.value,
@@ -1241,6 +1278,10 @@ resetModelCodeButton.addEventListener('click', () => {
 developerModeInput.addEventListener('change', () => {
   settingsDraft.developerMode = developerModeInput.checked;
   applySettingsToView(settingsDraft);
+});
+
+languageModeSelect.addEventListener('change', () => {
+  settingsDraft.languageMode = (languageModeSelect.value as LanguageMode) || 'nl-en';
 });
 
 engineSelect.addEventListener('change', () => {
