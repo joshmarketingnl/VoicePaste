@@ -116,7 +116,10 @@ export class EngineManager {
 
   private async start(): Promise<void> {
     try {
-      if (!this.resolved) {
+      // Re-resolve when the GPU couldn't be checked last time (driver still
+      // starting after a cold boot): a wake from sleep then moves to the GPU
+      // instead of staying on the slow CPU build for the rest of the day.
+      if (!this.resolved || this.resolved.gpuCheck === 'unavailable') {
         this.setStatus('preparing');
         this.resolved = await resolveEngine(this.logger, this.onProgress);
       }

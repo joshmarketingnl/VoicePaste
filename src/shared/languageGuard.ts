@@ -77,6 +77,7 @@ const OTHER_LANGUAGE_WORDS = new Set([
 ]);
 
 const MIN_WORDS_TO_JUDGE = 4;
+const DECISIVE_PROBABILITY = 0.5;
 const MIN_TARGET_WORD_RATIO = 0.12;
 const MIN_LATIN_LETTER_RATIO = 0.7;
 
@@ -126,11 +127,17 @@ export function decideLanguage(attempt: TranscriptionAttempt): LanguageDecision 
     return { action: 'accept' };
   }
 
+  // Only trust the probabilities when one of the two clearly wins. On very
+  // short clips both are near zero (Flemish "Ja." -> Russian, nl 0.02 vs en
+  // 0.13) and picking the larger one turned it into "Yeah."; trying both and
+  // keeping the more certain transcript gets "Ja." (field test 12-10-2026).
   const probabilities = attempt.languageProbabilities;
-  if (probabilities && (typeof probabilities.nl === 'number' || typeof probabilities.en === 'number')) {
+  if (probabilities) {
     const nl = probabilities.nl ?? 0;
     const en = probabilities.en ?? 0;
-    return { action: 'retry', language: nl >= en ? 'nl' : 'en' };
+    if (Math.max(nl, en) >= DECISIVE_PROBABILITY) {
+      return { action: 'retry', language: nl >= en ? 'nl' : 'en' };
+    }
   }
 
   return { action: 'retry-both' };

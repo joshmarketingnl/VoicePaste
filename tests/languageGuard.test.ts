@@ -57,13 +57,20 @@ describe('decideLanguage', () => {
     expect(decideLanguage({ text: 'Hello', language: 'english' })).toEqual({ action: 'accept' });
   });
 
-  it('retries once, forced to the likelier of nl/en, when probabilities are known', () => {
+  it('retries once, forced to nl or en, when one of them clearly wins', () => {
     expect(
-      decideLanguage({ text: 'x', language: 'afrikaans', languageProbabilities: { af: 0.6, nl: 0.35, en: 0.01 } }),
+      decideLanguage({ text: 'x', language: 'afrikaans', languageProbabilities: { af: 0.3, nl: 0.65, en: 0.01 } }),
     ).toEqual({ action: 'retry', language: 'nl' });
     expect(
-      decideLanguage({ text: 'x', language: 'welsh', languageProbabilities: { cy: 0.5, en: 0.3, nl: 0.02 } }),
+      decideLanguage({ text: 'x', language: 'welsh', languageProbabilities: { cy: 0.4, en: 0.55, nl: 0.02 } }),
     ).toEqual({ action: 'retry', language: 'en' });
+  });
+
+  it('tries both when nl and en are both unlikely (very short clips)', () => {
+    // Field test: Flemish "Ja." came back Russian with nl 0.02 vs en 0.13.
+    expect(
+      decideLanguage({ text: 'Я.', language: 'russian', languageProbabilities: { ru: 0.8, en: 0.13, nl: 0.02 } }),
+    ).toEqual({ action: 'retry-both' });
   });
 
   it('retries both languages when nothing says which of the two is likelier', () => {

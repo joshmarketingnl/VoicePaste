@@ -15,6 +15,7 @@ import {
 import os from 'os';
 import path from 'path';
 import { Logger } from '../shared/logger';
+import { detectNvidiaGpu, GpuCheck } from './gpuDetect';
 
 /**
  * Resolves the local whisper.cpp engine's binary, model and VAD files.
@@ -52,6 +53,8 @@ export interface ResolvedEngine {
   modelPath: string;
   vadPath: string | null;
   gpu: boolean;
+  /** How the GPU check went; 'unavailable' means worth checking again later. */
+  gpuCheck: GpuCheck;
   /** Extra directory to prepend to PATH so whisper-server finds ffmpeg. */
   ffmpegDir: string | null;
 }
@@ -92,15 +95,6 @@ function legacyServerDir(): string | null {
   return null;
 }
 
-function hasNvidiaGpu(): boolean {
-  if (process.platform !== 'win32') return false; // mac uses Metal (built into the binary)
-  try {
-    const res = spawnSync('nvidia-smi', ['-L'], { timeout: 4000 });
-    return res.status === 0 && /GPU\s+\d+/.test(res.stdout?.toString() ?? '');
-  } catch {
-    return false;
-  }
-}
 
 function fileAtLeast(filePath: string, minBytes: number): boolean {
   try {
@@ -221,7 +215,7 @@ async function resolveCudaBinary(logger: Logger, onProgress: ProgressFn): Promis
     await download(CUDA_ZIP_URL, zipPath, 'cuda', onProgress, logger);
     // Extract with PowerShell (Windows-only path).
     const extractDir = path.join(engineDir(), 'cuda-extract');
-    spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`], { timeout: 120000 });
+    spawnSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`], { timeout: 120000, windowsHide: true });
     const releaseDir = existsSync(path.join(extractDir, 'Release')) ? path.join(extractDir, 'Release') : extractDir;
     // Copy the exe + all DLLs into cudaDir.
     for (const name of readdirSync(releaseDir)) {
@@ -263,7 +257,7 @@ function findFfmpeg(): { dir: string | null; available: boolean } {
   if (existsSync(downloaded)) return { dir: path.dirname(downloaded), available: true };
   // System ffmpeg on PATH — whisper-server will find it itself.
   try {
-    const res = spawnSync(exe, ['-version'], { timeout: 4000 });
+    const res = spawnSync(exe, ['-version'], { timeout: 4000, windowsHide: true });
     if (res.status === 0) return { dir: null, available: true };
   } catch { /* not on PATH */ }
   return { dir: null, available: false };
@@ -301,7 +295,7 @@ async function downloadFfmpeg(logger: Logger, onProgress: ProgressFn): Promise<s
       const res = spawnSync(
         'powershell',
         ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`],
-        { timeout: 120000 },
+        { timeout: 120000, windowsHide: true },
       );
       if (res.status !== 0) throw new Error(`Expand-Archive failed: ${res.stderr?.toString().slice(0, 300)}`);
     } else {
@@ -326,7 +320,11 @@ async function downloadFfmpeg(logger: Logger, onProgress: ProgressFn): Promise<s
  * Returns the resolved paths for the EngineManager to launch whisper-server.
  */
 export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () => {}): Promise<ResolvedEngine> {
-  const gpu = hasNvidiaGpu();
+  const gpuCheck: GpuCheck = process.platform === 'win32' ? await detectNvidiaGpu() : 'no-driver'; // mac: Metal is built in
+  const gpu = gpuCheck === 'gpu';
+  if (gpuCheck === 'unavailable') {
+    logger.info('NVIDIA driver did not answer; using the CPU build for now and checking again later');
+  }
 
   // Binary: CUDA (win+nvidia) or the bundled CPU build.
   let binDir = bundledBinDir();
@@ -382,7 +380,7 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     }
   }
 
-  return { binaryPath, modelPath, vadPath, gpu, ffmpegDir: ffmpeg.dir };
+  return { binaryPath, modelPath, vadPath, gpu, gpuCheck, ffmpegDir: ffmpeg.dir };
 }
 
 /** Approx idle threads: leave headroom for the rest of the system. */

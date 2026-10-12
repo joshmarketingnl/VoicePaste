@@ -75,13 +75,24 @@ describe('transcribeSegments in nl-en mode', () => {
 
   it('local engine, Afrikaans detected: redone once, forced to the likelier Dutch', async () => {
     replies = [
-      { body: { text: 'Ek dink dit werk.', language: 'afrikaans', language_probabilities: { af: 0.6, nl: 0.35, en: 0.01 } } },
+      { body: { text: 'Ek dink dit werk.', language: 'afrikaans', language_probabilities: { af: 0.3, nl: 0.65, en: 0.01 } } },
       { body: { text: 'Ik denk dat het werkt.', language: 'dutch' } },
     ];
 
     expect(await run({ engine: 'local', languageMode: 'nl-en' })).toBe('Ik denk dat het werkt.');
     expect(requests).toHaveLength(2);
     expect(requests[1].language).toBe('nl');
+  });
+
+  it('local engine, very short clip in a third language: tries both, keeps the more certain', async () => {
+    replies = [
+      { body: { text: 'Я.', language: 'russian', language_probabilities: { ru: 0.8, en: 0.13, nl: 0.02 } } },
+      { body: { text: 'Ja.', language: 'dutch', segments: [{ avg_logprob: -0.098 }] } },
+      { body: { text: 'Yeah.', language: 'english', segments: [{ avg_logprob: -0.274 }] } },
+    ];
+
+    expect(await run({ engine: 'local', languageMode: 'nl-en' })).toBe('Ja.');
+    expect(requests.map((r) => r.language)).toEqual([undefined, 'nl', 'en']);
   });
 
   it('OpenAI gpt-4o-mini-transcribe, German text: tries both and keeps the more certain', async () => {
