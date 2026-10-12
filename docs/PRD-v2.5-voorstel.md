@@ -62,6 +62,12 @@ Oplevering: één artifact met vóór/ná en ja/nee per punt (zoals 2.4). Antwoo
 - Roadmap 2.5 uit data: stop+plak = 94% → optie één toets; CPU-only pc's (meten!) → kleiner model/Vulkan;
   geschiedenis laatste dictaten; woordenlijst (namen); cloud→lokaal bij geen netwerk; ondertekening.
 
+## Review-artifact 2.5
+https://claude.ai/artifact/6rN5q3YjXHSG9kxAfc1f9b · db-collectie `keuzes`, doc-ids: stilte-crash, dubbele-motor,
+hangen, microfoon, opnieuw-proberen, welkom, mac-toestemming, handleiding, diagnose, klein, r-klein-model,
+r-een-toets, r-woordenlijst, r-geschiedenis, r-upstream, r-cloud-lokaal, uitbrengen ("ja" = 2.4+2.5 samen als 2.5.0).
+Bron: `output/voicepaste-2.5-voorstel.html` (bouw: `context/screenshot-v25/build.py`, screenshots `shoot.cjs`).
+
 ## Resultaat (12-10 avond)
 Commits op `voorstel/v2.5`: b864c25 PRD · c653d3d robuustheid · 70a8eb3 onboarding · 2debe9e E2E + fixes ·
 cc19adb handleiding/CI · (laatste) foutmelding volledig + hidden-fix. 93 unit-tests, E2E 13/13 lokaal.
