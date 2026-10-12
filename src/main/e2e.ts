@@ -27,6 +27,11 @@ export function prepareE2eProcess(): void {
     app.commandLine.appendSwitch('use-fake-device-for-media-stream');
     app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
     app.commandLine.appendSwitch('use-file-for-fake-audio-capture', fakeMicWav);
+    if (process.platform === 'darwin') {
+      // macOS: the sandboxed audio service may not read the wav ("Failed to
+      // read ... as input to the fake device"); the app then hears silence.
+      app.commandLine.appendSwitch('no-sandbox');
+    }
   }
 }
 
