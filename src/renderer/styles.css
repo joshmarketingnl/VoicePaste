@@ -766,3 +766,8 @@ body {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.state-action {
+  align-self: flex-start;
+  margin-top: 2px;
+}

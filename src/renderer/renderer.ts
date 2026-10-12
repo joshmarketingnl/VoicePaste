@@ -118,6 +118,9 @@ const settingsCaptureHint = document.getElementById('settingsCaptureHint') as HT
 const settingsStatusText = document.getElementById('settingsStatusText') as HTMLElement;
 const developerToolsRow = document.getElementById('developerToolsRow') as HTMLElement;
 const openLogsButton = document.getElementById('openLogsButton') as HTMLButtonElement;
+const copyDiagnosticsButton = document.getElementById('copyDiagnosticsButton') as HTMLButtonElement;
+const helpLabel = document.getElementById('helpLabel') as HTMLElement;
+const helpHint = document.getElementById('helpHint') as HTMLElement;
 const cancelSettingsButton = document.getElementById('cancelSettingsButton') as HTMLButtonElement;
 const saveSettingsButton = document.getElementById('saveSettingsButton') as HTMLButtonElement;
 const recordActionLabel = document.getElementById('recordActionLabel') as HTMLElement;
@@ -125,6 +128,14 @@ const copyActionLabel = document.getElementById('copyActionLabel') as HTMLElemen
 
 let mediaRecorder: MediaRecorder | null = null;
 let mediaStream: MediaStream | null = null;
+// Loudest moment of the current recording, for telling "no signal at all"
+// (blocked or dead microphone) apart from a real recording. null = unknown.
+let levelContext: AudioContext | null = null;
+let levelAnalyser: AnalyserNode | null = null;
+let levelBuffer: Float32Array<ArrayBuffer> | null = null;
+let levelTimer: number | null = null;
+let peakDb: number | null = null;
+let levelSamples = 0;
 let sessionId: string | null = null;
 let mimeType = 'audio/webm';
 let segmentIndex = 0;
@@ -261,6 +272,11 @@ const UI_TEXT: Record<
     resetProviderCode: string;
     resetModelCode: string;
     openLogs: string;
+    help: string;
+    copyDiagnostics: string;
+    helpHint: string;
+    diagnosticsCopied: string;
+    diagnosticsFailed: string;
     cancel: string;
     save: string;
     record: string;
@@ -332,6 +348,11 @@ const UI_TEXT: Record<
     resetProviderCode: 'Reset provider code',
     resetModelCode: 'Reset model code',
     openLogs: 'Open Logs',
+    help: 'Help',
+    copyDiagnostics: 'Copy diagnostics',
+    helpHint: 'Something not working? Copy the diagnostics and paste them in a message. They contain no recordings, no text and no key.',
+    diagnosticsCopied: 'Diagnostics copied. Paste them in a message to whoever helps you.',
+    diagnosticsFailed: 'Copying the diagnostics failed.',
     cancel: 'Cancel',
     save: 'Save',
     record: 'Record',
@@ -402,6 +423,11 @@ const UI_TEXT: Record<
     resetProviderCode: 'Reset provider-code',
     resetModelCode: 'Reset model-code',
     openLogs: 'Logs openen',
+    help: 'Hulp',
+    copyDiagnostics: 'Diagnose kopiëren',
+    helpHint: 'Werkt iets niet? Kopieer de diagnose en plak die in een bericht. Er staan geen opnames, geen tekst en geen sleutel in.',
+    diagnosticsCopied: 'Diagnose gekopieerd. Plak hem in een bericht aan wie je helpt.',
+    diagnosticsFailed: 'Kopiëren van de diagnose is mislukt.',
     cancel: 'Annuleren',
     save: 'Opslaan',
     record: 'Opnemen',
@@ -598,6 +624,9 @@ function applyLocalizedLabels() {
   }
 
   openLogsButton.textContent = uiText.openLogs;
+  helpLabel.textContent = uiText.help;
+  copyDiagnosticsButton.textContent = uiText.copyDiagnostics;
+  helpHint.textContent = uiText.helpHint;
   cancelSettingsButton.textContent = uiText.cancel;
   saveSettingsButton.textContent = uiText.save;
   recordActionLabel.textContent = uiText.record;
@@ -628,6 +657,18 @@ function updateActionButtons() {
 
   const canCopy = currentAppState === 'ready' && Boolean(lastTranscriptText);
   copyButton.disabled = !canCopy;
+}
+
+const stateActionButton = document.getElementById('stateActionButton') as HTMLButtonElement;
+let stateActionId: string | null = null;
+stateActionButton.addEventListener('click', () => {
+  if (stateActionId) window.voicepaste.runStateAction(stateActionId);
+});
+
+function setStateAction(action?: { label: string; id: string }) {
+  stateActionId = action?.id ?? null;
+  stateActionButton.textContent = action?.label ?? '';
+  stateActionButton.hidden = !action;
 }
 
 function setStateView(state: string, message?: string, preview?: string) {
@@ -779,6 +820,7 @@ function setupRecorder(stream: MediaStream): MediaRecorder {
       return;
     }
 
+    const recordingPeakDb = stopLevelMeter();
     mediaStream?.getTracks().forEach((track) => track.stop());
     mediaStream = null;
     mediaRecorder = null;
@@ -794,6 +836,7 @@ function setupRecorder(stream: MediaStream): MediaRecorder {
           sessionId,
           segmentPaths,
           mimeType,
+          peakDb: recordingPeakDb === -Infinity ? -1000 : recordingPeakDb,
         });
       }
     }
@@ -813,12 +856,76 @@ function requestRotation() {
   mediaRecorder.stop();
 }
 
+function sampleLevel() {
+  if (!levelAnalyser || !levelBuffer || levelContext?.state !== 'running') {
+    return;
+  }
+  levelAnalyser.getFloatTimeDomainData(levelBuffer);
+  let max = 0;
+  for (const v of levelBuffer) {
+    const a = Math.abs(v);
+    if (a > max) max = a;
+  }
+  const db = max > 0 ? 20 * Math.log10(max) : -Infinity;
+  levelSamples += 1;
+  peakDb = peakDb === null ? db : Math.max(peakDb, db);
+}
+
+function startLevelMeter(stream: MediaStream) {
+  peakDb = null;
+  levelSamples = 0;
+  try {
+    levelContext = new AudioContext();
+    const source = levelContext.createMediaStreamSource(stream);
+    levelAnalyser = levelContext.createAnalyser();
+    levelAnalyser.fftSize = 2048;
+    levelBuffer = new Float32Array(new ArrayBuffer(levelAnalyser.fftSize * 4));
+    source.connect(levelAnalyser);
+    void levelContext.resume().catch(() => {});
+    levelTimer = window.setInterval(sampleLevel, 250);
+  } catch {
+    levelContext = null;
+    levelAnalyser = null;
+  }
+}
+
+/** Peak in dB, or null when the meter couldn't measure reliably. */
+function stopLevelMeter(): number | null {
+  sampleLevel();
+  if (levelTimer !== null) window.clearInterval(levelTimer);
+  levelTimer = null;
+  void levelContext?.close().catch(() => {});
+  levelContext = null;
+  levelAnalyser = null;
+  levelBuffer = null;
+  // A handful of samples from a running context, or we don't claim anything.
+  return levelSamples >= 3 ? peakDb : null;
+}
+
+async function openMicrophone(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    const name = (error as { name?: string })?.name ?? '';
+    // A USB microphone can be briefly unreadable (wake, another app letting go).
+    if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
+      await new Promise((r) => setTimeout(r, 600));
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (retryError) {
+        throw Object.assign(retryError as object, { retried: true });
+      }
+    }
+    throw error;
+  }
+}
+
 async function startRecording() {
   if (mediaRecorder) {
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await openMicrophone();
     mediaStream = stream;
     sessionId = await window.voicepaste.beginRecordingSession();
     segmentIndex = 0;
@@ -832,11 +939,22 @@ async function startRecording() {
     updateActionButtons();
     const recorder = setupRecorder(stream);
     mediaRecorder = recorder;
+    // Unplugged mid-recording: keep what was said instead of losing it.
+    stream.getAudioTracks().forEach((track) =>
+      track.addEventListener('ended', () => {
+        if (mediaRecorder && !isStopping && !isCancelling) {
+          window.voicepaste.notifyMicLost();
+          stopRecording();
+        }
+      }),
+    );
+    startLevelMeter(stream);
     recorder.start(TIMESLICE_MS);
     startTimer();
     window.voicepaste.notifyRecordingStarted();
-  } catch {
-    window.voicepaste.notifyRecordingError('Microphone access failed.');
+  } catch (error) {
+    const err = error as { name?: string; retried?: boolean };
+    window.voicepaste.notifyMicError({ name: err?.name ?? 'Error', retried: Boolean(err?.retried) });
     mediaRecorder = null;
     mediaStream = null;
     stopTimer();
@@ -1281,8 +1399,9 @@ updateDownloadButton.addEventListener('click', () => {
   }
 });
 
-window.voicepaste.onStateUpdate((data: { state: string; message?: string; preview?: string }) => {
+window.voicepaste.onStateUpdate((data: { state: string; message?: string; preview?: string; action?: { label: string; id: string } }) => {
   setStateView(data.state, data.message, data.preview);
+  setStateAction(data.action);
   if (data.state !== 'recording') {
     stopTimer();
   }
@@ -1400,6 +1519,11 @@ saveSettingsButton.addEventListener('click', async () => {
     cancelHotkeyCapture();
   }
   await saveSettingsFromUi(getUiText().settingsSaved);
+});
+
+copyDiagnosticsButton.addEventListener('click', async () => {
+  const ok = await window.voicepaste.copyDiagnostics();
+  setSettingsStatus(ok ? getUiText().diagnosticsCopied : getUiText().diagnosticsFailed, ok ? 'success' : 'error');
 });
 
 openLogsButton.addEventListener('click', async () => {

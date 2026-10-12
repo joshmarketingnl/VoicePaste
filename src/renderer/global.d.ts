@@ -4,6 +4,8 @@ interface VoicepasteStateUpdate {
   state: string;
   message?: string;
   preview?: string;
+  /** A button under the status, e.g. "Open settings" or "Try again". */
+  action?: { label: string; id: string };
 }
 
 interface CursorIndicatorUpdate {
@@ -46,10 +48,13 @@ interface VoicepasteAPI {
     mimeType: string;
   }) => Promise<string>;
   notifyRecordingStarted: () => void;
-  notifyRecordingStopped: (payload: { sessionId: string; segmentPaths: string[]; mimeType: string }) => void;
+  notifyRecordingStopped: (payload: { sessionId: string; segmentPaths: string[]; mimeType: string; peakDb?: number | null }) => void;
   notifyRecordingCancelled: (payload: { sessionId: string; segmentPaths: string[] }) => void;
   notifySegmentReady: (payload: { path: string; index: number; bytes: number }) => void;
   notifyRecordingError: (message: string) => void;
+  notifyMicError: (payload: { name: string; retried: boolean }) => void;
+  notifyMicLost: () => void;
+  runStateAction: (id: string) => void;
   onCommandStart: (callback: () => void) => void;
   onCommandStop: (callback: () => void) => void;
   onCommandCancel: (callback: () => void) => void;
@@ -58,6 +63,7 @@ interface VoicepasteAPI {
   getSettings: () => Promise<VoicepasteSettings>;
   saveSettings: (payload: VoicepasteSettings) => Promise<SaveVoicepasteSettingsResponse>;
   openLogsFolder: () => Promise<boolean>;
+  copyDiagnostics: () => Promise<boolean>;
   openExternalUrl: (url: string) => Promise<boolean>;
   setSettingsExpanded: (isExpanded: boolean) => void;
   setSettingsDeveloperMode: (isDeveloperMode: boolean) => void;

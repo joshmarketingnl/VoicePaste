@@ -9,6 +9,8 @@ import {
   shell,
   screen,
   clipboard,
+  crashReporter,
+  powerMonitor,
   type MenuItemConstructorOptions,
 } from 'electron';
 import fs from 'fs';
@@ -25,6 +27,14 @@ import { createSegmentTranscriber, transcribeSegments, TranscriptionTarget } fro
 import { EngineManager, EngineStatus } from './engineManager';
 import type { EngineAssetProgress } from './engineAssets';
 import { pasteTranscript, shutdownPasteHelper, warmPasteHelper } from './paste';
+import { classifyMicError, isNoSignal, micHelp } from '../shared/micErrors';
+import {
+  classifyTranscriptionError,
+  failedRecordingsToPrune,
+  nothingHeardMessage,
+  retryLabel,
+  transcriptionErrorMessage,
+} from '../shared/transcriptionErrors';
 import { getUpdateStatus, installUpdateNow, openDownloadPage, startUpdater, UpdateStatus } from './updater';
 import { createTrayIcon } from './trayIcon';
 import {
@@ -75,8 +85,8 @@ interface SettingsResponse {
 const CONTROL_WINDOW_WIDTH = 380;
 const CONTROL_WINDOW_HEIGHT = 200;
 const CONTROL_WINDOW_UPDATE_HEIGHT = 380;
-const CONTROL_WINDOW_SETTINGS_HEIGHT = 680;
-const CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT = 760;
+const CONTROL_WINDOW_SETTINGS_HEIGHT = 720;
+const CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT = 800;
 const CONTROL_WINDOW_MARGIN = 16;
 const WINDOWS_TRAY_WINDOW_MARGIN = 12;
 
@@ -309,11 +319,13 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
   return null;
 }
 
-function sendStateUpdate(state: AppState, message?: string, preview?: string) {
+type StateAction = { id: 'retry-failed' | 'open-mic-settings'; label: string };
+
+function sendStateUpdate(state: AppState, message?: string, preview?: string, action?: StateAction) {
   if (!mainWindow) {
     return;
   }
-  mainWindow.webContents.send('stateUpdate', { state, message, preview });
+  mainWindow.webContents.send('stateUpdate', { state, message, preview, action });
 
   if (mainWindow.isVisible()) {
     return;
@@ -510,7 +522,12 @@ function scheduleAutoRestart(reason: string) {
   }, AUTO_RESTART_DELAY_MS);
 }
 
-function reportRecoverableError(reason: string, message: string, details?: Record<string, unknown>) {
+function reportRecoverableError(
+  reason: string,
+  message: string,
+  details?: Record<string, unknown>,
+  action?: StateAction,
+) {
   clearQueuedPaste(`recoverable-error:${reason}`);
   stateMachine.transition('error', reason);
   logger.error('Recoverable error reported without auto-restart', {
@@ -518,7 +535,141 @@ function reportRecoverableError(reason: string, message: string, details?: Recor
     message,
     ...details,
   });
-  sendStateUpdate('error', message);
+  sendStateUpdate('error', message, undefined, action);
+}
+
+// ---- Kept recordings: a failed transcription never loses the dictation ----
+
+interface KeptRecording {
+  dir: string;
+  segmentPaths: string[];
+}
+let lastFailedRecording: KeptRecording | null = null;
+let micSettingsUrl: string | null = null;
+let micLostInSession = false;
+
+function failedRecordingsRoot(): string {
+  return path.join(app.getPath('userData'), 'failed');
+}
+
+function keepFailedRecording(sessionId: string, segmentPaths: string[]): KeptRecording | null {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dir = path.join(failedRecordingsRoot(), `${stamp}-${sessionId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const kept = segmentPaths
+      .filter((segmentPath) => fs.existsSync(segmentPath))
+      .map((segmentPath) => {
+        const target = path.join(dir, path.basename(segmentPath));
+        fs.copyFileSync(segmentPath, target);
+        return target;
+      });
+    if (!kept.length) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return null;
+    }
+    logger.info('Kept failed recording for a retry', { dir, segments: kept.length });
+    return { dir, segmentPaths: kept };
+  } catch (error) {
+    logger.error('Could not keep failed recording', { error: String(error) });
+    return null;
+  }
+}
+
+function pruneFailedRecordings() {
+  try {
+    const root = failedRecordingsRoot();
+    if (!fs.existsSync(root)) return;
+    for (const name of failedRecordingsToPrune(fs.readdirSync(root), Date.now())) {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    }
+  } catch (error) {
+    logger.debug('Pruning kept recordings failed', { error: String(error) });
+  }
+}
+
+function reportTranscriptionFailure(error: unknown, kept: KeptRecording | null) {
+  const problem = classifyTranscriptionError(error);
+  if (problem === 'too-short') {
+    reportRecoverableError('nothing-heard', nothingHeardMessage(config.uiLanguage), { error: String(error) });
+    return;
+  }
+  // Only the latest kept recording is offered for a retry; older ones stay
+  // on disk for a week (pruned at start-up).
+  if (kept) {
+    lastFailedRecording = kept;
+  }
+  reportRecoverableError(
+    'transcription-failed',
+    transcriptionErrorMessage(problem, config.uiLanguage),
+    { error: String(error), problem },
+    kept ? { id: 'retry-failed', label: retryLabel(config.uiLanguage) } : undefined,
+  );
+  updateTrayMenu();
+}
+
+function deliverTranscript(transcript: string): boolean {
+  if (!transcript.trim()) {
+    // Keep the previous transcript: pasting nothing (or the old text) after a
+    // silent recording helps nobody. Field: 9x "Nothing to paste yet".
+    reportRecoverableError('nothing-heard', nothingHeardMessage(config.uiLanguage));
+    return false;
+  }
+  lastTranscript = transcript;
+  const preview = buildPreview(transcript);
+  stateMachine.transition('ready', 'Transcript ready');
+  sendStateUpdate('ready', 'Ready to paste', preview);
+  mainWindow?.webContents.send('transcriptReady', { text: transcript, preview });
+  return true;
+}
+
+async function retryFailedRecording() {
+  const kept = lastFailedRecording;
+  if (!kept || activeTranscriptionJobs > 0) {
+    return;
+  }
+  logger.info('Retrying kept recording', { dir: kept.dir, segments: kept.segmentPaths.length });
+  let target: TranscriptionTarget;
+  try {
+    target = await resolveTranscriptionTarget();
+  } catch (error) {
+    reportTranscriptionFailure(error, kept);
+    return;
+  }
+  activeTranscriptionJobs += 1;
+  stateMachine.transition('transcribing', 'Transcribing');
+  sendStateUpdate('transcribing', 'Transcribing...');
+  try {
+    const transcript = await transcribeSegments(kept.segmentPaths, config, target, logger);
+    lastFailedRecording = null;
+    fs.rmSync(kept.dir, { recursive: true, force: true });
+    deliverTranscript(transcript);
+    logger.info('Kept recording transcribed on retry');
+    updateTrayMenu();
+  } catch (error) {
+    reportTranscriptionFailure(error, kept);
+  } finally {
+    activeTranscriptionJobs = Math.max(0, activeTranscriptionJobs - 1);
+  }
+}
+
+function runStateAction(id: string) {
+  if (id === 'retry-failed') {
+    void retryFailedRecording();
+  } else if (id === 'open-mic-settings' && micSettingsUrl) {
+    void shell.openExternal(micSettingsUrl);
+  }
+}
+
+function reportMicProblem(problem: ReturnType<typeof classifyMicError> | 'no-signal', details: Record<string, unknown>) {
+  const help = micHelp(problem, process.platform, config.uiLanguage);
+  micSettingsUrl = help.settingsUrl ?? null;
+  reportRecoverableError(
+    `mic-${problem}`,
+    help.message,
+    details,
+    help.settingsUrl && help.settingsLabel ? { id: 'open-mic-settings', label: help.settingsLabel } : undefined,
+  );
 }
 
 function targetMainWindowHeight(): number {
@@ -1148,6 +1299,16 @@ function getTrayPrimaryAction(): MenuItemConstructorOptions {
   };
 }
 
+function getTrayRetryItems(): MenuItemConstructorOptions[] {
+  if (!lastFailedRecording) return [];
+  return [
+    {
+      label: config.uiLanguage === 'nl' ? 'Mislukte opname opnieuw proberen' : 'Retry failed recording',
+      click: () => void retryFailedRecording(),
+    },
+  ];
+}
+
 function getTrayUpdateItems(): MenuItemConstructorOptions[] {
   const update = getUpdateStatus();
   if (update.kind === 'ready') {
@@ -1199,6 +1360,7 @@ function updateTrayMenu() {
 
   const menuTemplate: MenuItemConstructorOptions[] = [
     ...getTrayUpdateItems(),
+    ...getTrayRetryItems(),
     {
       label: mainWindow?.isVisible() ? 'Hide VoicePaste' : 'Show VoicePaste',
       click: () => {
@@ -1877,16 +2039,25 @@ function setupIpcHandlers() {
     'stopRecording',
     async (
       _event,
-      payload: { sessionId: string; segmentPaths: string[]; mimeType: string },
+      payload: { sessionId: string; segmentPaths: string[]; mimeType: string; peakDb?: number | null },
     ) => {
       if (activeTranscriptionJobs > 0 && stateMachine.getState() === 'transcribing') {
         logger.info('Transcription already in progress');
         return;
       }
       const { sessionId, segmentPaths } = payload;
+      const micLost = micLostInSession;
+      micLostInSession = false;
       if (!segmentPaths.length) {
-        const message = 'No audio captured.';
-        reportRecoverableError('stop-recording-no-audio', message);
+        reportRecoverableError('stop-recording-no-audio', nothingHeardMessage(config.uiLanguage));
+        cleanupSession(sessionId, segmentPaths);
+        return;
+      }
+      // Digital silence: a blocked (macOS privacy) or dead microphone. Don't
+      // send silence off to be transcribed; explain what to check instead.
+      if (isNoSignal(payload.peakDb)) {
+        forgetEarlyTranscripts(segmentPaths);
+        reportMicProblem('no-signal', { peakDb: payload.peakDb });
         cleanupSession(sessionId, segmentPaths);
         return;
       }
@@ -1904,7 +2075,10 @@ function setupIpcHandlers() {
       activeTranscriptionJobs += 1;
       const transcriptionJobId = ++activeTranscriptionJobId;
       stateMachine.transition('transcribing', 'Transcribing');
-      sendStateUpdate('transcribing', 'Transcribing...');
+      sendStateUpdate(
+        'transcribing',
+        micLost ? micHelp('lost', process.platform, config.uiLanguage).message : 'Transcribing...',
+      );
 
       const isTranscriptionJobCancelled = () => cancelledTranscriptionJobIds.has(transcriptionJobId);
 
@@ -1914,11 +2088,9 @@ function setupIpcHandlers() {
           logger.info('Transcription result ignored; job cancelled', { transcriptionJobId });
           return;
         }
-        lastTranscript = transcript;
-        const preview = buildPreview(transcript);
-        stateMachine.transition('ready', 'Transcript ready');
-        sendStateUpdate('ready', 'Ready to paste', preview);
-        mainWindow?.webContents.send('transcriptReady', { text: transcript, preview });
+        if (!deliverTranscript(transcript)) {
+          return;
+        }
         if (pasteQueuedAfterTranscription) {
           clearQueuedPaste('consumed-on-transcript-ready');
           logger.info('Executing queued paste after transcription');
@@ -1932,8 +2104,9 @@ function setupIpcHandlers() {
           });
           return;
         }
-        const message = 'Transcription failed.';
-        reportRecoverableError('transcription-failed', message, { error: String(error) });
+        // Copy the audio aside before `finally` deletes the session.
+        const kept = classifyTranscriptionError(error) === 'too-short' ? null : keepFailedRecording(sessionId, segmentPaths);
+        reportTranscriptionFailure(error, kept);
       } finally {
         cancelledTranscriptionJobIds.delete(transcriptionJobId);
         forgetEarlyTranscripts(segmentPaths);
@@ -1951,6 +2124,31 @@ function setupIpcHandlers() {
     stateMachine.transition('idle', 'Recording cancelled');
     sendStateUpdate('idle', 'Idle');
     cleanupSession(sessionId, segmentPaths);
+  });
+
+  ipcMain.handle('copyDiagnostics', () => {
+    try {
+      clipboard.writeText(buildDiagnostics());
+      logger.info('Diagnostics copied to clipboard');
+      return true;
+    } catch (error) {
+      logger.error('Copying diagnostics failed', { error: String(error) });
+      return false;
+    }
+  });
+
+  ipcMain.on('micError', (_event, payload: { name: string; retried: boolean }) => {
+    const problem = classifyMicError(payload?.name);
+    reportMicProblem(problem, { name: payload?.name, retried: payload?.retried });
+  });
+
+  ipcMain.on('micLost', () => {
+    micLostInSession = true;
+    logger.info('Microphone dropped out during recording; keeping what was recorded');
+  });
+
+  ipcMain.on('runStateAction', (_event, id: string) => {
+    runStateAction(id);
   });
 
   ipcMain.on('recordingError', (_event, message: string) => {
@@ -2150,8 +2348,13 @@ async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
   return { baseUrl: DEFAULT_PROVIDER, apiKey };
 }
 
+// Set when Windows ends the session (shutdown, restart, sign-out) or the
+// system shuts down: from then on nothing is restarted.
+let systemShuttingDown = false;
+
 function createEngineManager(): EngineManager {
   return new EngineManager(logger, {
+    mayRestart: () => !systemShuttingDown && !isQuitting,
     idleSleepMs: Math.max(0, config.engineIdleSleepMinutes ?? 0) * 60_000,
     onStatusChange: (status: EngineStatus) => {
       logger.info('Engine status', { status });
@@ -2230,6 +2433,8 @@ function initializeApp() {
     logger.info('Config migrated from previous version', { from: loaded.migrationSourcePath });
   }
   attachProcessErrorHandlers();
+  pruneFailedRecordings();
+  reportPreviousCrashes();
 
   stateMachine = new StateMachine('idle', logger, (change) => {
     lastActivityAt = Date.now();
@@ -2260,6 +2465,7 @@ function initializeApp() {
   // Have the Windows paste helper ready before the first paste (cold start
   // after boot otherwise costs seconds on that first paste).
   setTimeout(() => warmPasteHelper(), 5_000);
+  setupPowerHandling();
 
   startUpdater({
     logger,
@@ -2314,6 +2520,107 @@ app.on('will-quit', () => {
 // hotkeys and rewrite the autostart registry key to its own — outdated — exe.
 // The second instance exits before it touches any of that; the running
 // instance responds by showing its control window.
+// Crash dumps stay on this computer (privacy promise: nothing goes to the
+// internet). They are counted at the next start and in the diagnostics.
+try {
+  crashReporter.start({ uploadToServer: false, compress: true });
+} catch {
+  // A crash reporter that can't start must never stop the app.
+}
+
+function crashDumpFiles(): Array<{ file: string; mtimeMs: number }> {
+  const found: Array<{ file: string; mtimeMs: number }> = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 3 || !fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, depth + 1);
+      else if (entry.name.endsWith('.dmp')) found.push({ file: full, mtimeMs: fs.statSync(full).mtimeMs });
+    }
+  };
+  try {
+    walk(app.getPath('crashDumps'), 0);
+  } catch {
+    // no crash dir yet
+  }
+  return found;
+}
+
+function reportPreviousCrashes() {
+  try {
+    const marker = path.join(app.getPath('userData'), 'crash-check.json');
+    const since = fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, 'utf8')).at ?? 0 : 0;
+    const fresh = crashDumpFiles().filter((d) => d.mtimeMs > since);
+    if (fresh.length) {
+      logger.error('Crash reports from a previous run found on this computer', {
+        count: fresh.length,
+        newest: new Date(Math.max(...fresh.map((d) => d.mtimeMs))).toISOString(),
+      });
+    }
+    fs.writeFileSync(marker, JSON.stringify({ at: Date.now() }), 'utf8');
+  } catch (error) {
+    logger.debug('Crash report check failed', { error: String(error) });
+  }
+}
+
+function setupPowerHandling() {
+  powerMonitor.on('suspend', () => {
+    logger.info('System going to sleep', { state: stateMachine.getState() });
+    // Finish a running recording instead of leaving it hanging over the sleep.
+    if (stateMachine.getState() === 'recording') {
+      mainWindow?.webContents.send('commandStop');
+    }
+  });
+  powerMonitor.on('resume', () => {
+    logger.info('System woke up', { engine: engineManager?.getStatus() ?? 'none' });
+    warmPasteHelper();
+  });
+  powerMonitor.on('shutdown', () => {
+    systemShuttingDown = true;
+    logger.info('System shutting down');
+  });
+  // Windows: the main window hears the session end (shutdown, restart, sign-out).
+  mainWindow?.on('session-end', () => {
+    systemShuttingDown = true;
+    logger.info('Windows session ending');
+    engineManager?.dispose();
+  });
+}
+
+/** One block of text a user can paste into a message to get help. */
+function buildDiagnostics(): string {
+  const home = app.getPath('home');
+  const redact = (text: string) =>
+    text
+      .split(home).join('~')
+      .split(home.replace(/\\/g, '\\\\')).join('~')
+      .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-…');
+  let tail: string[] = [];
+  try {
+    const logFile = path.join(app.getPath('userData'), 'logs', 'app.log');
+    tail = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n').slice(-150);
+  } catch {
+    tail = ['(geen logboek gevonden)'];
+  }
+  const summary = {
+    versie: app.getVersion(),
+    systeem: `${process.platform} ${process.arch} ${process.getSystemVersion?.() ?? ''}`.trim(),
+    electron: process.versions.electron,
+    motor: config.engine,
+    motorStatus: engineManager?.getStatus() ?? 'niet gestart',
+    taal: config.languageMode,
+    interfacetaal: config.uiLanguage,
+    sneltoetsen: config.hotkeys,
+    sleutelIngesteld: Boolean(config.apiKey),
+    slaapNaMinuten: config.engineIdleSleepMinutes,
+    crashrapporten: crashDumpFiles().length,
+    mislukteOpnameBewaard: Boolean(lastFailedRecording),
+  };
+  return redact(
+    ['VoicePaste-diagnose', JSON.stringify(summary, null, 2), '', 'Laatste logregels:', ...tail].join('\n'),
+  );
+}
+
 // Startup is logged before the normal logger exists: a crash in early init
 // (or a relaunch that never gets going, e.g. right after an auto-update) would
 // otherwise leave no trace at all.

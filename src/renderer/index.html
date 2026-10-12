@@ -59,6 +59,7 @@
         <div id="spinner" class="spinner" aria-hidden="true"></div>
       </div>
       <div id="previewText" class="preview-text"></div>
+      <button id="stateActionButton" class="settings-secondary-button state-action" type="button" hidden></button>
       <div class="action-row">
         <button
           id="recordActionButton"
@@ -370,6 +371,13 @@
             <span class="settings-toggle-track" aria-hidden="true"></span>
           </label>
         </div>
+        <div class="settings-field">
+          <span id="helpLabel" class="settings-label">Help</span>
+          <div class="settings-inline">
+            <button id="copyDiagnosticsButton" class="settings-secondary-button" type="button">Copy diagnostics</button>
+          </div>
+        </div>
+        <div id="helpHint" class="settings-hint settings-hint-spaced"></div>
         <div id="developerToolsRow" class="settings-dev-tools" hidden>
           <button id="openLogsButton" class="settings-secondary-button" type="button">Open Logs</button>
         </div>

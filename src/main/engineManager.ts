@@ -33,6 +33,7 @@ export class EngineManager {
   private onStatusChange: (status: EngineStatus) => void;
   private idleSleepMs: number;
   private idleTimer: NodeJS.Timeout | null = null;
+  private mayRestart: () => boolean;
 
   constructor(
     logger: Logger,
@@ -42,12 +43,15 @@ export class EngineManager {
       /** Sleep (kill whisper-server, freeing the model memory) after this many
        *  ms without transcriptions; 0 = never. ensureReady() wakes it again. */
       idleSleepMs?: number;
+      /** Return false to skip automatic restarts (e.g. Windows is shutting down). */
+      mayRestart?: () => boolean;
     } = {},
   ) {
     this.logger = logger;
     this.onProgress = hooks.onProgress ?? (() => {});
     this.onStatusChange = hooks.onStatusChange ?? (() => {});
     this.idleSleepMs = hooks.idleSleepMs ?? 0;
+    this.mayRestart = hooks.mayRestart ?? (() => true);
   }
 
   getStatus(): EngineStatus {
@@ -235,6 +239,13 @@ export class EngineManager {
 
   private scheduleRestart(): void {
     if (this.disposed) return;
+    // Field: Windows stops the engine while shutting down, and an immediate
+    // restart then fails with 0xC0000142. Don't fight the shutdown.
+    if (!this.mayRestart()) {
+      this.logger.info('Engine stopped while the system is shutting down; not restarting');
+      this.setStatus('stopped');
+      return;
+    }
     if (this.restarts >= MAX_RESTARTS) {
       this.setStatus('error');
       this.lastError = 'Engine crashed repeatedly';
@@ -245,7 +256,7 @@ export class EngineManager {
     this.setStatus('starting');
     this.logger.info('Restarting engine', { attempt: this.restarts });
     setTimeout(() => {
-      if (this.disposed) return;
+      if (this.disposed || !this.mayRestart()) return;
       this.start().catch((err) => this.logger.error('Engine restart failed', { error: String(err) }));
     }, RESTART_BACKOFF_MS);
   }
