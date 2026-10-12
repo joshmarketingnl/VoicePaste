@@ -36,14 +36,21 @@ This is how it almost always goes: put your cursor where the text should go, pre
 
 You can mix Dutch and English. Long dictations are fine: a ten-minute recording works too.
 
+Prefer one key? Switch on **Record key also stops and pastes** in Settings. You then start with the record key and stop and paste with the same key.
+
+Your last ten dictations are in the icon's menu under **Recent dictations**. Click one to copy it. They stay on your own computer; switching off **Keep the last 10 dictations** deletes them.
+
 ## Settings
 
 Click the VoicePaste icon (Windows: tray; Mac: menu bar at the top) and choose **Settings**. There you can set:
 
 - **Spoken language**: Dutch + English (recommended), Dutch only or English only.
+- **Speed of the local engine**: on Automatic, VoicePaste uses the large speech model with an NVIDIA card or on a Mac, and otherwise a small model that is four times faster. Jargon comes out better with the large one; choose **Accurate** for that.
+- **Word list**: names and jargon you often say, one per line. VoicePaste then spells them right more often.
 - **App language**: Dutch or English.
 - **Hotkeys**: click a key, press the new combination and save.
 - **Engine**: by default local, on your computer. With your own OpenAI key it can also run through OpenAI. Note: your audio then does go to OpenAI, and OpenAI charges your account per minute.
+- **Without internet, transcribe on this computer** (OpenAI only): with no connection, VoicePaste converts your recording on your own computer. For that it downloads a small speech model (190 MB) once, in the background.
 
 ## Updates
 
@@ -62,7 +69,10 @@ Click the VoicePaste icon (Windows: tray; Mac: menu bar at the top) and choose *
 No. VoicePaste is free and runs on your own computer. Only if you choose to use your own OpenAI key do you pay OpenAI for that use.
 
 **Does my voice go to the internet?**
-No, not with the default setting. Converting happens on your computer. Internet is only needed for the first download and for updates.
+No, not with the default setting. Converting happens on your computer. Internet is only needed for the first download and for updates. With an OpenAI key your recording does go to OpenAI, except when you have no internet.
+
+**I use OpenAI and have no internet.**
+VoicePaste then converts the recording on your own computer, if the small speech model is already there. That takes a little longer. If it can't, the recording is kept and you click **Try again** later.
 
 **It doesn't paste anything.**
 Mac: switch VoicePaste on under System Settings › Privacy & Security › Accessibility (sometimes again after an update). Windows: an ordinary app may not paste into programs running as administrator; open the VoicePaste window there (Ctrl+Alt+Shift+M), click **Copy** and paste it yourself with Ctrl+V.
@@ -71,13 +81,13 @@ Mac: switch VoicePaste on under System Settings › Privacy & Security › Acces
 Correct. After fifteen minutes of nothing, VoicePaste unloads the speech model to free memory. On the next recording it wakes up while you talk; usually you won't notice.
 
 **Converting is slow.**
-On a computer with an NVIDIA graphics card or a Mac with an Apple chip it usually takes one to three seconds. Without such a graphics card the processor does all the work, which can take up to half a minute. If you want it faster, use your own OpenAI key.
+On a computer with an NVIDIA graphics card or a Mac with an Apple chip it usually takes one to three seconds. Without such a card VoicePaste uses the small model by itself: about seven to ten seconds. Faster still with your own OpenAI key.
 
 **How much space and memory does it use?**
 The speech model is about 550 MB. While working it uses about 2 GB of memory, which is released after fifteen quiet minutes.
 
 **It keeps getting a word wrong.**
-Speak in whole sentences; single words are harder. Names and jargon sometimes go wrong. Read the text before you send anything.
+Add it to the **Word list** in Settings. Speak in whole sentences; single words are harder. Read the text before you send anything.
 
 **How do I uninstall it?**
 Windows: Settings › Apps › VoicePaste › Uninstall. Mac: drag VoicePaste from Applications to the Bin.

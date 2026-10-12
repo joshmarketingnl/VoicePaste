@@ -1,26 +1,29 @@
 # VoicePaste
 
-VoicePaste is a small desktop utility that lets you record speech with a global hotkey, transcribe via OpenAI or a local OpenAI-compatible transcription server, and paste the result into any focused app.
+Press a key, talk, press a key: VoicePaste turns your speech into text and pastes it where your cursor is.
+Dutch and English, mixed freely. It runs on your own computer (no account, nothing sent to the internet),
+or with your own OpenAI key if you prefer.
 
-## Download (macOS, no build needed)
+## Download
 
-Grab the latest zip from [Releases](https://github.com/joshmarketingnl/VoicePaste/releases)
-(`-arm64-mac.zip` for Apple Silicon, `-mac.zip` for Intel), unzip, and move the app to
-`/Applications`. The build is unsigned — clear Gatekeeper once (see the Gatekeeper section below).
+- **Windows:** [VoicePaste-Setup.exe](https://github.com/joshmarketingnl/VoicePaste/releases/latest/download/VoicePaste-Setup.exe).
+  Updates install themselves.
+- **Mac:** the zip on the [latest release](https://github.com/joshmarketingnl/VoicePaste/releases/latest)
+  (`arm64-mac.zip` for Apple chips, `mac.zip` for Intel). Unsigned: see the Gatekeeper section below.
 
-**Fully local transcription (free, offline):** install the companion server with one line —
+How to use it: [handleiding (NL)](docs/handleiding.md) · [manual (EN)](docs/manual.md).
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/joshmarketingnl/voicepaste-local-server/main/macos/install.sh | bash -s -- --autostart
-```
+Made by Josh. Questions or ideas: [WhatsApp](https://wa.me/+31647569554).
 
-— then set `provider` to `http://127.0.0.1:8765/v1` in the app settings. No API key needed.
-macOS builds are produced by the [build-macos workflow](.github/workflows/build-macos.yml).
+## Development
+
+Everything below is for building VoicePaste yourself.
 
 ## Requirements
 - Node.js 18+ (Node 20 recommended)
 - macOS (primary) or Windows (secondary)
-- An OpenAI API key (ENV `OPENAI_API_KEY` preferred), unless using a local OpenAI-compatible transcription server
+- No API key needed: the whisper.cpp engine is built in (`npm run fetch-engine` fetches the binaries;
+  the app downloads the speech model on first start). An OpenAI key is optional.
 
 ## Install
 ```bash

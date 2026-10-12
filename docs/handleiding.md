@@ -36,14 +36,21 @@ Zo gaat het bijna altijd: zet je cursor waar de tekst moet komen, druk op **opne
 
 Je kunt Nederlands en Engels door elkaar gebruiken. Lange stukken zijn geen probleem: ook een opname van tien minuten werkt.
 
+Liever één toets? Zet in Instellingen **Opnemen-toets stopt ook en plakt** aan. Dan start je met de opnemen-toets en stop en plak je met dezelfde toets.
+
+Je laatste tien dictaten vind je terug in het menu van het icoon, onder **Recente dictaten**. Klik erop om er een te kopiëren. Ze staan alleen op je eigen computer; zet je **Laatste 10 dictaten bewaren** uit, dan worden ze gewist.
+
 ## Instellingen
 
 Klik op het VoicePaste-icoon (Windows: systeemvak; Mac: menubalk bovenin) en kies **Settings**. Daar stel je in:
 
 - **Gesproken taal**: Nederlands + Engels (aanbevolen), alleen Nederlands of alleen Engels.
+- **Snelheid van de lokale motor**: op Automatisch gebruikt VoicePaste het grote spraakmodel als je een NVIDIA-kaart of een Mac hebt, en anders een klein model dat vier keer sneller is. Vaktermen gaan beter met het grote; kies dan **Nauwkeurig**.
+- **Woordenlijst**: namen en vaktermen die je vaak zegt, één per regel. VoicePaste spelt ze dan vaker goed.
 - **Taal van de app**: Nederlands of Engels.
 - **Sneltoetsen**: klik op een toets, druk de nieuwe combinatie in en sla op.
 - **Motor**: standaard lokaal op je computer. Heb je een eigen OpenAI-sleutel, dan kan het ook via OpenAI. Let op: dan gaat je geluid wel naar OpenAI en rekent OpenAI per minuut af op jouw account.
+- **Zonder internet omzetten op deze computer** (alleen bij OpenAI): heb je geen verbinding, dan zet VoicePaste je opname op je eigen computer om. Daarvoor haalt hij eenmalig op de achtergrond een klein spraakmodel op (190 MB).
 
 ## Updates
 
@@ -62,7 +69,10 @@ Klik op het VoicePaste-icoon (Windows: systeemvak; Mac: menubalk bovenin) en kie
 Nee. VoicePaste is gratis en werkt op je eigen computer. Alleen als je zelf kiest voor een OpenAI-sleutel betaal je OpenAI voor het gebruik.
 
 **Gaat mijn stem naar internet?**
-Nee, niet met de standaardinstelling. Het omzetten gebeurt op je computer. Internet is alleen nodig voor de eerste download en voor updates.
+Nee, niet met de standaardinstelling. Het omzetten gebeurt op je computer. Internet is alleen nodig voor de eerste download en voor updates. Gebruik je een OpenAI-sleutel, dan gaat je opname wel naar OpenAI, behalve als je even geen internet hebt.
+
+**Ik gebruik OpenAI en heb geen internet.**
+Dan zet VoicePaste de opname op je eigen computer om, als het kleine spraakmodel al binnen is. Dat duurt wat langer. Lukt het niet, dan wordt de opname bewaard en klik je later op **Opnieuw proberen**.
 
 **Hij plakt niets.**
 Mac: zet VoicePaste aan onder Systeeminstellingen › Privacy en beveiliging › Toegankelijkheid (na een update soms opnieuw). Windows: in programma's die als administrator draaien mag een gewone app niet plakken; open daar het VoicePaste-venster (Ctrl+Alt+Shift+M), klik op **Kopiëren** en plak zelf met Ctrl+V.
@@ -71,13 +81,13 @@ Mac: zet VoicePaste aan onder Systeeminstellingen › Privacy en beveiliging ›
 Klopt. Na een kwartier niets doen ruimt VoicePaste het spraakmodel op om geheugen vrij te maken. Bij de volgende opname wordt het wakker terwijl je praat; meestal merk je er dan niets van.
 
 **Het omzetten is traag.**
-Op een computer met een NVIDIA-videokaart of een Mac met Apple-chip duurt het meestal één tot drie seconden. Zonder zo'n videokaart rekent de processor alles uit en dat kan tot een halve minuut duren. Wil je het sneller, dan kan het via een eigen OpenAI-sleutel.
+Op een computer met een NVIDIA-videokaart of een Mac met Apple-chip duurt het meestal één tot drie seconden. Zonder zo'n videokaart gebruikt VoicePaste vanzelf het kleine model: ongeveer zeven tot tien seconden. Nog sneller kan via een eigen OpenAI-sleutel.
 
 **Hoeveel ruimte en geheugen gebruikt het?**
 Het spraakmodel is ongeveer 550 MB. Tijdens het werken gebruikt het ongeveer 2 GB geheugen, dat na een kwartier stilte weer vrijkomt.
 
 **Hij verstaat een woord steeds verkeerd.**
-Spreek in hele zinnen; losse woorden zijn lastiger. Namen en vaktermen gaan soms mis. Lees de tekst even na voordat je iets verstuurt.
+Zet het in de **Woordenlijst** in Instellingen. Spreek in hele zinnen; losse woorden zijn lastiger. Lees de tekst even na voordat je iets verstuurt.
 
 **Hoe verwijder ik het?**
 Windows: Instellingen › Apps › VoicePaste › Verwijderen. Mac: sleep VoicePaste uit Programma's naar de prullenmand.
