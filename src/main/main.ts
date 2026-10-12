@@ -88,6 +88,9 @@ interface SettingsResponse {
 const CONTROL_WINDOW_WIDTH = 380;
 const CONTROL_WINDOW_HEIGHT = 200;
 const CONTROL_WINDOW_UPDATE_HEIGHT = 440;
+// An explanation plus a button ("Try again", "Open settings") needs a few
+// lines; at 200 px it was cut off after the first one.
+const CONTROL_WINDOW_ERROR_HEIGHT = 250;
 const CONTROL_WINDOW_SETTINGS_HEIGHT = 720;
 const CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT = 800;
 const CONTROL_WINDOW_MARGIN = 16;
@@ -335,8 +338,15 @@ function sendToMainWindow(channel: string, payload?: unknown) {
   mainWindow.webContents.send(channel, payload);
 }
 
+let errorDetailsShown = false;
+
 function sendStateUpdate(state: AppState, message?: string, preview?: string, action?: StateAction) {
   e2eEvent({ state, message, action: action?.id });
+  const showDetails = state === 'error' && (Boolean(action) || (message?.length ?? 0) > 45);
+  if (showDetails !== errorDetailsShown) {
+    errorDetailsShown = showDetails;
+    resizeMainWindowForSettings();
+  }
   if (!mainWindow) {
     return;
   }
@@ -692,7 +702,10 @@ function targetMainWindowHeight(): number {
   if (settingsWindowExpanded) {
     return settingsWindowDeveloperMode ? CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT : CONTROL_WINDOW_SETTINGS_HEIGHT;
   }
-  return updatePanelOpen ? CONTROL_WINDOW_UPDATE_HEIGHT : CONTROL_WINDOW_HEIGHT;
+  if (updatePanelOpen) {
+    return CONTROL_WINDOW_UPDATE_HEIGHT;
+  }
+  return errorDetailsShown ? CONTROL_WINDOW_ERROR_HEIGHT : CONTROL_WINDOW_HEIGHT;
 }
 
 function getMainWindowSize() {
