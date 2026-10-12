@@ -51,6 +51,8 @@ const includeLong = args.includes('--long');
 // Optional folder with extra model files (e.g. ggml-small-q5_1.bin) so the
 // small-model scenario doesn't download 190 MB on every local run.
 const extraModels = argValue('--extra-models');
+// A packaged build (e.g. VoicePaste.exe from the release zip) instead of `electron .`.
+const appExe = argValue('--app');
 const ENGINE_READY_MS = 15 * 60 * 1000;
 const TRANSCRIBE_MS = Number(process.env.E2E_TRANSCRIBE_TIMEOUT_MS || 5 * 60 * 1000);
 const EXPECT_WORDS = ['quick', 'brown', 'fox', 'lazy', 'dog'];
@@ -182,7 +184,7 @@ async function launch(name, { wav, config }) {
   fs.writeFileSync(path.join(userData, 'config.json'), JSON.stringify({ uiLanguage: 'en', ...config }, null, 2));
   const port = await freePort();
   const electronPath = require('electron');
-  const proc = spawn(electronPath, ['.', '--launch-hidden'], {
+  const proc = spawn(appExe ?? electronPath, appExe ? ['--launch-hidden'] : ['.', '--launch-hidden'], {
     cwd: repoRoot,
     stdio: ['ignore', 'ignore', 'inherit'],
     env: {
