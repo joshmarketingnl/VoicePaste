@@ -19,6 +19,9 @@
  *   too-short     a recording stopped at once is explained, not an error
  *   offline       endpoint unreachable: recording kept, retry works once back
  *   long          (with --long) 100 s: segment rotation + early transcription
+ *   offline-here  OpenAI/custom without a connection: done on this computer,
+ *                 ended with the record key (one-key option), kept in history
+ *   fast-model    the small model (PCs without NVIDIA)
  *
  * Usage: node scripts/e2e-recording.mjs --engine-source <dir> [--long] [--only a,b] [--work <dir>]
  *   <dir> holds `models/` (and on Windows+NVIDIA optionally `bin-gpu/`), e.g.
@@ -45,6 +48,9 @@ const argValue = (name) => {
 const engineSource = argValue('--engine-source');
 const only = argValue('--only')?.split(',');
 const includeLong = args.includes('--long');
+// Optional folder with extra model files (e.g. ggml-small-q5_1.bin) so the
+// small-model scenario doesn't download 190 MB on every local run.
+const extraModels = argValue('--extra-models');
 const ENGINE_READY_MS = 15 * 60 * 1000;
 const TRANSCRIBE_MS = Number(process.env.E2E_TRANSCRIBE_TIMEOUT_MS || 5 * 60 * 1000);
 const EXPECT_WORDS = ['quick', 'brown', 'fox', 'lazy', 'dog'];
@@ -172,6 +178,7 @@ function freePort() {
 async function launch(name, { wav, config }) {
   const userData = path.join(work, name);
   linkTree(engineSource, path.join(userData, 'engine'));
+  if (extraModels) linkTree(extraModels, path.join(userData, 'engine', 'models'));
   fs.writeFileSync(path.join(userData, 'config.json'), JSON.stringify({ uiLanguage: 'en', ...config }, null, 2));
   const port = await freePort();
   const electronPath = require('electron');
@@ -481,7 +488,8 @@ async function main() {
   const endpointPort = await freePort();
   app = await launch('offline', {
     wav: speech,
-    config: { engine: 'custom', provider: `http://127.0.0.1:${endpointPort}/v1`, apiKey: 'e2e-test' },
+    // Without the offline reserve: the recording must be kept for a retry.
+    config: { engine: 'custom', provider: `http://127.0.0.1:${endpointPort}/v1`, apiKey: 'e2e-test', offlineFallback: false },
   });
   await scenario(app, 'offline', async () => {
     const hit = await dictate(app, 3);
@@ -501,6 +509,51 @@ async function main() {
     } finally {
       server.close();
     }
+  });
+  await app.quit();
+  checkLog(app);
+
+  // 4. OpenAI/custom without a connection, with the 2.0 options switched on.
+  console.log('\n[offline-here] endpoint down, offline reserve on, one-key dictation, history');
+  const deadPort = await freePort();
+  app = await launch('offline-here', {
+    wav: speech,
+    config: {
+      engine: 'custom',
+      provider: `http://127.0.0.1:${deadPort}/v1`,
+      apiKey: 'e2e-test',
+      offlineFallback: true,
+      recordKeyPastes: true,
+      keepHistory: true,
+    },
+  });
+  await scenario(app, 'offline-here', async () => {
+    await app.cmd('record');
+    await app.waitState('recording');
+    await sleep(5000);
+    await app.cmd('record'); // the record key again: stop, transcribe and paste
+    const hit = await app.waitFor('paste', (e) => 'paste' in e || e.state === 'error', TRANSCRIBE_MS);
+    assert('paste' in hit, `expected a paste done on this computer, got ${JSON.stringify(hit)}`);
+    assert(countWords(hit.paste) >= 2, `pasted text lacks the spoken words: "${hit.paste}"`);
+    const events = await app.since();
+    assert(events.some((e) => /on this computer/.test(e.message ?? '')), 'no "transcribing on this computer" message');
+    const state = await app.cmd('state');
+    assert(state.history?.[0] === hit.paste, `not in the history: ${JSON.stringify(state.history)}`);
+    return { words: countWords(hit.paste) };
+  });
+  await app.quit();
+  checkLog(app);
+
+  // 5. The small model (what a PC without NVIDIA gets automatically).
+  console.log('\n[fast-model] local engine with the small model');
+  app = await launch('fast-model', { wav: speech, config: { engine: 'local', localModel: 'fast' } });
+  await scenario(app, 'fast-model', async () => {
+    const hit = await dictate(app, 6);
+    assert('transcript' in hit, `expected a transcript, got ${JSON.stringify(hit)}`);
+    assert(countWords(hit.transcript) >= 2, `transcript lacks the spoken words: "${hit.transcript}"`);
+    const log = fs.readFileSync(app.logPath, 'utf8');
+    assert(/Local engine ready \{[^}]*"model":"small"/.test(log), 'engine did not run the small model');
+    return { words: countWords(hit.transcript) };
   });
   await app.quit();
   checkLog(app);

@@ -6,6 +6,7 @@ import { Logger } from '../shared/logger';
 import { withRetries } from './retry';
 import { LOCAL_TRANSCRIPTION_API_KEY } from '../shared/config';
 import { decideLanguage, meanOf, pickMoreCertain, TranscriptionAttempt } from '../shared/languageGuard';
+import { vocabularyPrompt } from '../shared/vocabulary';
 
 function httpStatus(error: unknown): number | undefined {
   const anyError = error as { status?: number; response?: { status?: number } };
@@ -83,8 +84,9 @@ async function requestAttempt(
   model: string,
   language: string | undefined,
   flavor: ResponseFlavor,
+  prompt?: string,
 ): Promise<TranscriptionAttempt> {
-  const base = { file: fs.createReadStream(segmentPath), model, language };
+  const base = { file: fs.createReadStream(segmentPath), model, language, ...(prompt ? { prompt } : {}) };
 
   if (flavor === 'verbose') {
     const response = (await client.audio.transcriptions.create({
@@ -140,12 +142,14 @@ export function createSegmentTranscriber(
     });
   let client = makeClient();
   let flavor = responseFlavorFor(config.engine, config.model);
+  const prompt = vocabularyPrompt(config.vocabulary);
   // A dropped connection to the embedded engine means it crashed (handled
   // below); to OpenAI or a custom server it is worth asking again.
   const retryable = (error: unknown) => isRetryable(error) || (!target.recover && isConnectionLost(error));
 
   const attempt = async (segmentPath: string, language?: string): Promise<TranscriptionAttempt> => {
-    const run = () => withRetries(() => requestAttempt(client, segmentPath, config.model, language, flavor), 2, 500, retryable);
+    const run = () =>
+      withRetries(() => requestAttempt(client, segmentPath, config.model, language, flavor, prompt), 2, 500, retryable);
     try {
       return await run();
     } catch (error) {
@@ -164,7 +168,7 @@ export function createSegmentTranscriber(
         logger.info('Engine dropped the request; asking again in plain json', { error: String(error) });
         baseUrl = await target.recover(baseUrl);
         client = makeClient();
-        return requestAttempt(client, segmentPath, config.model, language, 'json');
+        return requestAttempt(client, segmentPath, config.model, language, 'json', prompt);
       }
       throw error;
     }

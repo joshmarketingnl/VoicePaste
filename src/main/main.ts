@@ -40,6 +40,9 @@ import {
 import { getUpdateStatus, installUpdateNow, openDownloadPage, startUpdater, UpdateStatus } from './updater';
 import { createTrayIcon } from './trayIcon';
 import { e2eEvent, isE2E, prepareE2eProcess, startE2eControl } from './e2e';
+import { downloadedModelSizes, prepareOfflineReserve } from './engineAssets';
+import { isLocalModelChoice, LocalModelChoice } from '../shared/engineModel';
+import { addToHistory, HistoryEntry, historyLabel, parseHistory } from '../shared/history';
 import {
   getCursorIndicatorAlwaysOnTopLevel,
   isCursorIndicatorSupportedPlatform,
@@ -71,6 +74,11 @@ interface SettingsPayload {
   modelCode: string;
   apiKey: string;
   hotkeys: HotkeysConfig;
+  localModel?: LocalModelChoice;
+  recordKeyPastes?: boolean;
+  vocabulary?: string;
+  keepHistory?: boolean;
+  offlineFallback?: boolean;
 }
 
 interface SettingsResponse {
@@ -83,6 +91,11 @@ interface SettingsResponse {
   modelCode: string;
   apiKey: string;
   hotkeys: HotkeysConfig;
+  localModel: LocalModelChoice;
+  recordKeyPastes: boolean;
+  vocabulary: string;
+  keepHistory: boolean;
+  offlineFallback: boolean;
 }
 
 const CONTROL_WINDOW_WIDTH = 380;
@@ -268,6 +281,11 @@ function getSettingsResponse(): SettingsResponse {
     modelCode: config.model,
     apiKey: config.apiKey ?? '',
     hotkeys: { ...config.hotkeys },
+    localModel: config.localModel,
+    recordKeyPastes: config.recordKeyPastes,
+    vocabulary: config.vocabulary,
+    keepHistory: config.keepHistory,
+    offlineFallback: config.offlineFallback,
   };
 }
 
@@ -281,7 +299,12 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
     (payload.languageMode !== undefined && !['nl-en', 'nl', 'en'].includes(payload.languageMode)) ||
     typeof payload.providerCode !== 'string' ||
     typeof payload.modelCode !== 'string' ||
-    typeof payload.apiKey !== 'string'
+    typeof payload.apiKey !== 'string' ||
+    (payload.localModel !== undefined && !isLocalModelChoice(payload.localModel)) ||
+    (payload.recordKeyPastes !== undefined && typeof payload.recordKeyPastes !== 'boolean') ||
+    (payload.vocabulary !== undefined && (typeof payload.vocabulary !== 'string' || payload.vocabulary.length > 2000)) ||
+    (payload.keepHistory !== undefined && typeof payload.keepHistory !== 'boolean') ||
+    (payload.offlineFallback !== undefined && typeof payload.offlineFallback !== 'boolean')
   ) {
     return 'Invalid settings payload.';
   }
@@ -642,6 +665,7 @@ function deliverTranscript(transcript: string): boolean {
   }
   lastTranscript = transcript;
   e2eEvent({ transcript });
+  rememberTranscript(transcript);
   const preview = buildPreview(transcript);
   stateMachine.transition('ready', 'Transcript ready');
   sendStateUpdate('ready', 'Ready to paste', preview);
@@ -673,6 +697,14 @@ async function retryFailedRecording() {
     logger.info('Kept recording transcribed on retry');
     updateTrayMenu();
   } catch (error) {
+    const offline = await transcribeOfflineHere(kept.segmentPaths, error);
+    if (offline !== null) {
+      lastFailedRecording = null;
+      fs.rmSync(kept.dir, { recursive: true, force: true });
+      deliverTranscript(offline);
+      updateTrayMenu();
+      return;
+    }
     reportTranscriptionFailure(error, kept);
   } finally {
     activeTranscriptionJobs = Math.max(0, activeTranscriptionJobs - 1);
@@ -1328,6 +1360,106 @@ function getTrayPrimaryAction(): MenuItemConstructorOptions {
   };
 }
 
+// ---------- Recent dictations (local only) ----------
+let history: HistoryEntry[] = [];
+
+function historyPath(): string {
+  return path.join(app.getPath('userData'), 'history.json');
+}
+
+function loadHistory() {
+  try {
+    history = parseHistory(JSON.parse(fs.readFileSync(historyPath(), 'utf8')));
+  } catch {
+    history = [];
+  }
+}
+
+function rememberTranscript(text: string) {
+  if (!config.keepHistory) return;
+  history = addToHistory(history, text, new Date());
+  try {
+    fs.writeFileSync(historyPath(), JSON.stringify(history), 'utf8');
+  } catch (error) {
+    logger.debug('History not saved', { error: String(error) });
+  }
+  updateTrayMenu();
+}
+
+function clearHistory() {
+  history = [];
+  try {
+    fs.rmSync(historyPath(), { force: true });
+  } catch {
+    // nothing to remove
+  }
+  logger.info('Dictation history cleared');
+}
+
+function getTrayHistoryItems(): MenuItemConstructorOptions[] {
+  if (!config.keepHistory || !history.length) return [];
+  const now = new Date();
+  return [
+    {
+      label: config.uiLanguage === 'nl' ? 'Recente dictaten (kopiëren)' : 'Recent dictations (copy)',
+      submenu: history.map((entry) => ({
+        label: historyLabel(entry, now),
+        click: () => {
+          clipboard.writeText(entry.text);
+          logger.info('History entry copied to clipboard');
+        },
+      })),
+    },
+  ];
+}
+
+// ---------- Offline reserve (OpenAI/custom without a connection) ----------
+let offlineReserveScheduled = false;
+
+/** Fetch the small model in the background so a dictation without internet still works. */
+function scheduleOfflineReserve(delayMs: number) {
+  if (offlineReserveScheduled || downloadedModelSizes().length) return;
+  offlineReserveScheduled = true;
+  setTimeout(() => {
+    prepareOfflineReserve(logger).catch((error) => {
+      offlineReserveScheduled = false;
+      logger.info('Offline reserve not ready yet', { error: String(error) });
+    });
+  }, delayMs).unref?.();
+}
+
+/**
+ * OpenAI/custom and no connection: transcribe on this computer when a speech
+ * model is already here. Returns null when that isn't possible.
+ */
+async function transcribeOfflineHere(segmentPaths: string[], error: unknown): Promise<string | null> {
+  if (config.engine === 'local' || !config.offlineFallback) return null;
+  if (classifyTranscriptionError(error) !== 'offline' || !downloadedModelSizes().length) return null;
+  logger.info('No connection; transcribing on this computer instead');
+  sendStateUpdate(
+    'transcribing',
+    config.uiLanguage === 'nl' ? 'Geen verbinding: omzetten op deze computer…' : 'No connection: transcribing on this computer…',
+  );
+  try {
+    if (!engineManager) engineManager = createEngineManager({ allowDownload: false });
+    await engineManager.ensureReady();
+    const baseUrl = engineManager.getBaseUrl();
+    if (!baseUrl) return null;
+    const manager = engineManager;
+    const transcript = await transcribeSegments(
+      segmentPaths,
+      { ...config, engine: 'local' },
+      { baseUrl, apiKey: '', recover: (failedBaseUrl) => manager.recover(failedBaseUrl) },
+      logger,
+    );
+    logger.info('Transcribed on this computer without a connection');
+    return transcript;
+  } catch (fallbackError) {
+    logger.info('Transcribing on this computer failed too', { error: String(fallbackError) });
+    return null;
+  }
+}
+
 function getTrayRetryItems(): MenuItemConstructorOptions[] {
   if (!lastFailedRecording) return [];
   return [
@@ -1390,6 +1522,7 @@ function updateTrayMenu() {
   const menuTemplate: MenuItemConstructorOptions[] = [
     ...getTrayUpdateItems(),
     ...getTrayRetryItems(),
+    ...getTrayHistoryItems(),
     {
       label: mainWindow?.isVisible() ? 'Hide VoicePaste' : 'Show VoicePaste',
       click: () => {
@@ -1580,6 +1713,11 @@ function createCursorIndicatorWindow(): BrowserWindow | null {
 function handleToggleRecording() {
   const state = stateMachine.getState();
   if (state === 'recording') {
+    if (config.recordKeyPastes) {
+      // One-key dictation (setting): the record key also stops and pastes.
+      handlePasteHotkey();
+      return;
+    }
     handleStopAndTranscribe('toggle');
     return;
   }
@@ -2158,6 +2296,14 @@ function setupIpcHandlers() {
           });
           return;
         }
+        const offline = await transcribeOfflineHere(segmentPaths, error);
+        if (offline !== null && !isTranscriptionJobCancelled()) {
+          if (deliverTranscript(offline) && pasteQueuedAfterTranscription) {
+            clearQueuedPaste('consumed-on-transcript-ready');
+            void handlePaste();
+          }
+          return;
+        }
         // Copy the audio aside before `finally` deletes the session.
         const kept = classifyTranscriptionError(error) === 'too-short' ? null : keepFailedRecording(sessionId, segmentPaths);
         reportTranscriptionFailure(error, kept);
@@ -2267,6 +2413,11 @@ function setupIpcHandlers() {
       model: payload.modelCode.trim() || DEFAULT_MODEL,
       apiKey: normalizeApiKeyForStorage(payload.apiKey),
       hotkeys: normalizeSettingsHotkeys(payload.hotkeys),
+      localModel: payload.localModel ?? config.localModel,
+      recordKeyPastes: payload.recordKeyPastes ?? config.recordKeyPastes,
+      vocabulary: payload.vocabulary ?? config.vocabulary,
+      keepHistory: payload.keepHistory ?? config.keepHistory,
+      offlineFallback: payload.offlineFallback ?? config.offlineFallback,
     };
 
     try {
@@ -2297,16 +2448,24 @@ function setupIpcHandlers() {
       }
     }
 
-    // React to an engine switch: start/stop the embedded engine as needed.
-    if (previousConfig.engine !== config.engine) {
+    // React to an engine or model switch: (re)start or stop the embedded engine.
+    // A fresh manager each time: one kept for the offline reserve may not download.
+    const modelChanged = previousConfig.localModel !== config.localModel;
+    if (previousConfig.engine !== config.engine || (modelChanged && config.engine === 'local')) {
+      engineManager?.dispose();
+      engineManager = null;
       if (config.engine === 'local') {
-        if (!engineManager) engineManager = createEngineManager();
+        engineManager = createEngineManager();
         engineManager.ensureReady().catch((error) => logger.info('Engine warm-up deferred', { error: String(error) }));
-      } else {
-        engineManager?.dispose();
-        engineManager = null;
       }
     }
+    if (config.engine !== 'local' && config.offlineFallback) {
+      scheduleOfflineReserve(5_000);
+    }
+    if (previousConfig.keepHistory && !config.keepHistory) {
+      clearHistory();
+    }
+    updateTrayMenu();
 
     logger.info('Settings saved', {
       developerMode: config.developerMode,
@@ -2472,9 +2631,10 @@ function checkOnboarding() {
   }
 }
 
-function createEngineManager(): EngineManager {
+function createEngineManager(options: { allowDownload?: boolean } = {}): EngineManager {
   return new EngineManager(logger, {
     mayRestart: () => !systemShuttingDown && !isQuitting,
+    resolveOptions: () => ({ choice: config.localModel, allowDownload: options.allowDownload ?? true }),
     idleSleepMs: Math.max(0, config.engineIdleSleepMinutes ?? 0) * 60_000,
     onStatusChange: (status: EngineStatus) => {
       logger.info('Engine status', { status });
@@ -2558,6 +2718,7 @@ function initializeApp() {
   attachProcessErrorHandlers();
   pruneFailedRecordings();
   reportPreviousCrashes();
+  loadHistory();
 
   stateMachine = new StateMachine('idle', logger, (change) => {
     lastActivityAt = Date.now();
@@ -2603,6 +2764,7 @@ function initializeApp() {
         lastTranscript,
         engine: engineManager?.getStatus() ?? null,
         windowLoaded: Boolean(mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()),
+        history: history.map((entry) => entry.text),
       }),
       record: () => handleToggleRecording(),
       stop: () => handleStopAndTranscribe('toggle'),
@@ -2637,6 +2799,10 @@ function initializeApp() {
         isQuitting = true;
       },
     });
+  }
+
+  if (config.engine !== 'local' && config.offlineFallback && !isE2E) {
+    scheduleOfflineReserve(120_000);
   }
 
   // Warm up the embedded engine in the background so the first dictation is

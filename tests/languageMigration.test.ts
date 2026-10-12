@@ -57,7 +57,11 @@ describe('languageMode migration', () => {
     const { languageMode, ...rest } = migrated;
     const { languageMode: _old, ...original } = V22_CLOUD_CONFIG;
     expect(languageMode).toBe('nl-en');
-    expect(rest).toEqual(original);
+    // Everything the user had is kept as it was; 2.0 only adds new settings.
+    expect(rest).toMatchObject(original);
+    expect(Object.keys(rest).filter((k) => !(k in original)).sort()).toEqual(
+      ['keepHistory', 'localModel', 'offlineFallback', 'recordKeyPastes', 'vocabulary'],
+    );
   });
 });
 

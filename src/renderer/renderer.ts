@@ -18,12 +18,19 @@ type StatusTone = 'neutral' | 'error' | 'success';
 type TranscriptionEngine = 'local' | 'openai' | 'custom';
 type LanguageMode = 'nl-en' | 'nl' | 'en';
 
+type LocalModelChoice = 'auto' | 'accurate' | 'fast';
+
 interface RendererSettings {
   developerMode: boolean;
   uiLanguage: UiLanguage;
   indicatorStyle: 'dot' | 'detailed';
   engine: TranscriptionEngine;
   languageMode: LanguageMode;
+  localModel: LocalModelChoice;
+  recordKeyPastes: boolean;
+  vocabulary: string;
+  keepHistory: boolean;
+  offlineFallback: boolean;
   providerCode: string;
   modelCode: string;
   apiKey: string;
@@ -59,6 +66,26 @@ const indicatorStyleInput = document.getElementById('indicatorStyleInput') as HT
 const engineLabel = document.getElementById('engineLabel') as HTMLElement;
 const engineSelect = document.getElementById('engineSelect') as HTMLSelectElement;
 const engineHint = document.getElementById('engineHint') as HTMLElement;
+const localModelField = document.getElementById('localModelField') as HTMLElement;
+const localModelLabel = document.getElementById('localModelLabel') as HTMLElement;
+const localModelSelect = document.getElementById('localModelSelect') as HTMLSelectElement;
+const localModelOptions = {
+  auto: document.getElementById('localModelOptionAuto') as HTMLOptionElement,
+  accurate: document.getElementById('localModelOptionAccurate') as HTMLOptionElement,
+  fast: document.getElementById('localModelOptionFast') as HTMLOptionElement,
+};
+const localModelHint = document.getElementById('localModelHint') as HTMLElement;
+const offlineFallbackField = document.getElementById('offlineFallbackField') as HTMLElement;
+const offlineFallbackLabel = document.getElementById('offlineFallbackLabel') as HTMLElement;
+const offlineFallbackInput = document.getElementById('offlineFallbackInput') as HTMLInputElement;
+const offlineFallbackHint = document.getElementById('offlineFallbackHint') as HTMLElement;
+const vocabularyLabel = document.getElementById('vocabularyLabel') as HTMLElement;
+const vocabularyInput = document.getElementById('vocabularyInput') as HTMLTextAreaElement;
+const vocabularyHint = document.getElementById('vocabularyHint') as HTMLElement;
+const recordKeyPastesLabel = document.getElementById('recordKeyPastesLabel') as HTMLElement;
+const recordKeyPastesInput = document.getElementById('recordKeyPastesInput') as HTMLInputElement;
+const keepHistoryLabel = document.getElementById('keepHistoryLabel') as HTMLElement;
+const keepHistoryInput = document.getElementById('keepHistoryInput') as HTMLInputElement;
 const engineOptionLocal = document.getElementById('engineOptionLocal') as HTMLOptionElement;
 const engineOptionOpenai = document.getElementById('engineOptionOpenai') as HTMLOptionElement;
 const engineOptionCustom = document.getElementById('engineOptionCustom') as HTMLOptionElement;
@@ -195,6 +222,11 @@ let settingsDraft: RendererSettings = {
   indicatorStyle: 'dot',
   engine: 'local',
   languageMode: 'nl-en',
+  localModel: 'auto',
+  recordKeyPastes: false,
+  vocabulary: '',
+  keepHistory: true,
+  offlineFallback: true,
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -206,6 +238,11 @@ let settingsCommitted: RendererSettings = {
   indicatorStyle: 'dot',
   engine: 'local',
   languageMode: 'nl-en',
+  localModel: 'auto',
+  recordKeyPastes: false,
+  vocabulary: '',
+  keepHistory: true,
+  offlineFallback: true,
   providerCode: DEFAULT_PROVIDER,
   modelCode: DEFAULT_MODEL,
   apiKey: '',
@@ -259,6 +296,16 @@ const UI_TEXT: Record<
     engineHint: Record<'local' | 'openai' | 'custom', string>;
     languageModeLabel: string;
     languageModeOptions: Record<LanguageMode, string>;
+    localModelLabel: string;
+    localModelOptions: Record<LocalModelChoice, string>;
+    localModelHint: string;
+    offlineFallbackLabel: string;
+    offlineFallbackHint: string;
+    vocabularyLabel: string;
+    vocabularyPlaceholder: string;
+    vocabularyHint: string;
+    recordKeyPastesLabel: (pasteKey: string) => string;
+    keepHistoryLabel: string;
     welcome: {
       titles: Record<WelcomeInfo['reason'], string>;
       intros: Record<WelcomeInfo['reason'], string>;
@@ -383,6 +430,21 @@ const UI_TEXT: Record<
       nl: 'Dutch only',
       en: 'English only',
     },
+    localModelLabel: 'Speed of the local engine',
+    localModelOptions: {
+      auto: 'Automatic (recommended)',
+      accurate: 'Accurate (large model)',
+      fast: 'Fast (small model)',
+    },
+    localModelHint:
+      'Automatic uses the large model with an NVIDIA card or on a Mac, and the small, four times faster one otherwise. Jargon comes out better with the large one.',
+    offlineFallbackLabel: 'Without internet, transcribe on this computer',
+    offlineFallbackHint: 'Downloads a small speech model (190 MB) once, in the background.',
+    vocabularyLabel: 'Word list',
+    vocabularyPlaceholder: 'Names and terms, one per line',
+    vocabularyHint: 'Names and jargon you often use. Helps with the spelling.',
+    recordKeyPastesLabel: (pasteKey) => `Record key also stops and pastes (instead of ${pasteKey})`,
+    keepHistoryLabel: 'Keep the last 10 dictations (icon menu, on this computer only)',
     providerCode: 'Provider code',
     modelCode: 'Model code',
     openAiApiKey: 'OpenAI API key',
@@ -485,6 +547,21 @@ const UI_TEXT: Record<
       nl: 'Alleen Nederlands',
       en: 'Alleen Engels',
     },
+    localModelLabel: 'Snelheid van de lokale motor',
+    localModelOptions: {
+      auto: 'Automatisch (aanbevolen)',
+      accurate: 'Nauwkeurig (groot model)',
+      fast: 'Snel (klein model)',
+    },
+    localModelHint:
+      'Automatisch kiest het grote model met een NVIDIA-kaart of op een Mac, en anders het kleine, dat vier keer sneller is. Vaktermen gaan beter met het grote.',
+    offlineFallbackLabel: 'Zonder internet omzetten op deze computer',
+    offlineFallbackHint: 'Haalt eenmalig op de achtergrond een klein spraakmodel op (190 MB).',
+    vocabularyLabel: 'Woordenlijst',
+    vocabularyPlaceholder: 'Namen en vaktermen, één per regel',
+    vocabularyHint: 'Namen en vaktermen die je vaak gebruikt. Helpt bij de spelling.',
+    recordKeyPastesLabel: (pasteKey) => `Opnemen-toets stopt ook en plakt (in plaats van ${pasteKey})`,
+    keepHistoryLabel: 'Laatste 10 dictaten bewaren (menu van het icoon, alleen op deze computer)',
     providerCode: 'Provider-code',
     modelCode: 'Model-code',
     openAiApiKey: 'OpenAI API-sleutel',
@@ -566,6 +643,11 @@ function cloneSettings(settings: RendererSettings): RendererSettings {
     indicatorStyle: settings.indicatorStyle,
     engine: settings.engine,
     languageMode: settings.languageMode,
+    localModel: settings.localModel,
+    recordKeyPastes: settings.recordKeyPastes,
+    vocabulary: settings.vocabulary,
+    keepHistory: settings.keepHistory,
+    offlineFallback: settings.offlineFallback,
     providerCode: settings.providerCode,
     modelCode: settings.modelCode,
     apiKey: settings.apiKey,
@@ -649,6 +731,18 @@ function applyLocalizedLabels() {
   settingsTitleText.textContent = uiText.settingsTitle;
   developerModeLabel.textContent = uiText.developerMode;
   indicatorStyleLabel.textContent = uiText.detailedIndicator;
+  localModelLabel.textContent = uiText.localModelLabel;
+  localModelOptions.auto.textContent = uiText.localModelOptions.auto;
+  localModelOptions.accurate.textContent = uiText.localModelOptions.accurate;
+  localModelOptions.fast.textContent = uiText.localModelOptions.fast;
+  localModelHint.textContent = uiText.localModelHint;
+  offlineFallbackLabel.textContent = uiText.offlineFallbackLabel;
+  offlineFallbackHint.textContent = uiText.offlineFallbackHint;
+  vocabularyLabel.textContent = uiText.vocabularyLabel;
+  vocabularyInput.placeholder = uiText.vocabularyPlaceholder;
+  vocabularyHint.textContent = uiText.vocabularyHint;
+  recordKeyPastesLabel.textContent = uiText.recordKeyPastesLabel(formatHotkeyForUi(settingsDraft.hotkeys.pasteTranscript));
+  keepHistoryLabel.textContent = uiText.keepHistoryLabel;
   engineLabel.textContent = uiText.engineLabel;
   engineOptionLocal.textContent = uiText.engineOptionLocal;
   engineOptionOpenai.textContent = uiText.engineOptionOpenai;
@@ -724,6 +818,11 @@ function syncSettingsDraftFromInputs() {
     indicatorStyle: indicatorStyleInput.checked ? 'detailed' : 'dot',
     engine: (engineSelect.value as TranscriptionEngine) || 'local',
     languageMode: (languageModeSelect.value as LanguageMode) || 'nl-en',
+    localModel: (localModelSelect.value as LocalModelChoice) || 'auto',
+    recordKeyPastes: recordKeyPastesInput.checked,
+    vocabulary: vocabularyInput.value,
+    keepHistory: keepHistoryInput.checked,
+    offlineFallback: offlineFallbackInput.checked,
     providerCode: providerCodeInput.value,
     modelCode: modelCodeInput.value,
     apiKey: apiKeyInput.value,
@@ -1113,6 +1212,11 @@ function applySettingsToView(settings: RendererSettings) {
   indicatorStyleInput.checked = settingsDraft.indicatorStyle === 'detailed';
   engineSelect.value = settingsDraft.engine;
   languageModeSelect.value = settingsDraft.languageMode;
+  localModelSelect.value = settingsDraft.localModel;
+  recordKeyPastesInput.checked = settingsDraft.recordKeyPastes;
+  vocabularyInput.value = settingsDraft.vocabulary;
+  keepHistoryInput.checked = settingsDraft.keepHistory;
+  offlineFallbackInput.checked = settingsDraft.offlineFallback;
   providerCodeInput.value = settingsDraft.providerCode;
   modelCodeInput.value = settingsDraft.modelCode;
   apiKeyInput.value = settingsDraft.apiKey;
@@ -1128,6 +1232,10 @@ function syncEngineView() {
   const engine = (engineSelect.value as TranscriptionEngine) || 'local';
   const uiText = getUiText();
   engineHint.textContent = uiText.engineHint[engine];
+  localModelField.hidden = engine !== 'local';
+  localModelHint.hidden = engine !== 'local';
+  offlineFallbackField.hidden = engine === 'local';
+  offlineFallbackHint.hidden = engine === 'local';
   // API key only relevant for OpenAI; custom endpoint only for 'custom'.
   const showApiKey = engine === 'openai' || (engine === 'custom');
   apiKeyLabel.parentElement && (apiKeyLabel.closest('.settings-field') as HTMLElement | null)?.style.setProperty('display', showApiKey ? '' : 'none');
@@ -1151,6 +1259,11 @@ function setSettingsBusy(isBusy: boolean) {
   }
   developerModeInput.disabled = isBusy;
   indicatorStyleInput.disabled = isBusy;
+  localModelSelect.disabled = isBusy;
+  recordKeyPastesInput.disabled = isBusy;
+  vocabularyInput.disabled = isBusy;
+  keepHistoryInput.disabled = isBusy;
+  offlineFallbackInput.disabled = isBusy;
   apiKeyInput.disabled = isBusy;
   syncDeveloperModeView();
 }
@@ -1279,6 +1392,11 @@ async function saveSettingsFromUi(successMessage: string): Promise<boolean> {
     indicatorStyle: settingsDraft.indicatorStyle,
     engine: settingsDraft.engine,
     languageMode: settingsDraft.languageMode,
+    localModel: settingsDraft.localModel,
+    recordKeyPastes: settingsDraft.recordKeyPastes,
+    vocabulary: settingsDraft.vocabulary,
+    keepHistory: settingsDraft.keepHistory,
+    offlineFallback: settingsDraft.offlineFallback,
     providerCode: settingsDraft.providerCode,
     modelCode: settingsDraft.modelCode,
     apiKey: apiKeyInput.value,

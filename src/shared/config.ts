@@ -1,4 +1,5 @@
 import { AppConfig, IndicatorMode, IndicatorStyle, LanguageMode, TranscriptionEngine, UiLanguage } from './types';
+import { isLocalModelChoice } from './engineModel';
 
 export const DEFAULT_MODEL = 'gpt-4o-mini-transcribe';
 export const DEFAULT_PROVIDER = 'https://api.openai.com/v1';
@@ -54,6 +55,11 @@ export function defaultConfigForPlatform(platform: PlatformKey): AppConfig {
     indicatorStyle: 'dot',
     diagnostics: false,
     engineIdleSleepMinutes: 15,
+    localModel: 'auto',
+    recordKeyPastes: false,
+    vocabulary: '',
+    keepHistory: true,
+    offlineFallback: true,
   };
 }
 
@@ -129,7 +135,7 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
     model: typeof input.model === 'string' && input.model.trim() ? input.model.trim() : defaults.model,
     developerMode: typeof input.developerMode === 'boolean' ? input.developerMode : defaults.developerMode,
     uiLanguage: isUiLanguage(input.uiLanguage) ? input.uiLanguage : defaults.uiLanguage,
-    // A deliberate single language (nl/en/es) is kept; the legacy 'auto' and
+    // A deliberate single language (nl/en) is kept; the legacy 'auto' and
     // anything missing or unknown becomes 'nl-en'. Nothing else is touched.
     languageMode: isLanguageMode(input.languageMode) ? input.languageMode : defaults.languageMode,
     restoreClipboard: typeof input.restoreClipboard === 'boolean' ? input.restoreClipboard : defaults.restoreClipboard,
@@ -142,6 +148,11 @@ export function mergeConfig(input: Partial<AppConfig> | null | undefined, platfo
       input.engineIdleSleepMinutes >= 0
         ? Math.min(1440, Math.round(input.engineIdleSleepMinutes))
         : defaults.engineIdleSleepMinutes,
+    localModel: isLocalModelChoice(input.localModel) ? input.localModel : defaults.localModel,
+    recordKeyPastes: typeof input.recordKeyPastes === 'boolean' ? input.recordKeyPastes : defaults.recordKeyPastes,
+    vocabulary: typeof input.vocabulary === 'string' ? input.vocabulary.slice(0, 2000) : defaults.vocabulary,
+    keepHistory: typeof input.keepHistory === 'boolean' ? input.keepHistory : defaults.keepHistory,
+    offlineFallback: typeof input.offlineFallback === 'boolean' ? input.offlineFallback : defaults.offlineFallback,
     apiKey: typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined,
   };
 }

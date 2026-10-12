@@ -2,7 +2,7 @@ import { ChildProcess, spawn } from 'child_process';
 import net from 'net';
 import path from 'path';
 import { Logger } from '../shared/logger';
-import { engineThreadCount, ProgressFn, resolveEngine, ResolvedEngine } from './engineAssets';
+import { engineThreadCount, ProgressFn, ResolveOptions, resolveEngine, ResolvedEngine } from './engineAssets';
 
 /**
  * Manages the embedded whisper.cpp engine as a child process, so the app is a
@@ -34,6 +34,7 @@ export class EngineManager {
   private idleSleepMs: number;
   private idleTimer: NodeJS.Timeout | null = null;
   private mayRestart: () => boolean;
+  private resolveOptions: () => ResolveOptions;
 
   constructor(
     logger: Logger,
@@ -45,6 +46,8 @@ export class EngineManager {
       idleSleepMs?: number;
       /** Return false to skip automatic restarts (e.g. Windows is shutting down). */
       mayRestart?: () => boolean;
+      /** Model choice, and whether missing files may be downloaded. */
+      resolveOptions?: () => ResolveOptions;
     } = {},
   ) {
     this.logger = logger;
@@ -52,6 +55,7 @@ export class EngineManager {
     this.onStatusChange = hooks.onStatusChange ?? (() => {});
     this.idleSleepMs = hooks.idleSleepMs ?? 0;
     this.mayRestart = hooks.mayRestart ?? (() => true);
+    this.resolveOptions = hooks.resolveOptions ?? (() => ({}));
   }
 
   getStatus(): EngineStatus {
@@ -148,7 +152,7 @@ export class EngineManager {
       // instead of staying on the slow CPU build for the rest of the day.
       if (!this.resolved || this.resolved.gpuCheck === 'unavailable') {
         this.setStatus('preparing');
-        this.resolved = await resolveEngine(this.logger, this.onProgress);
+        this.resolved = await resolveEngine(this.logger, this.onProgress, this.resolveOptions());
       }
       this.setStatus('starting');
       const port = await findFreePort();
@@ -159,7 +163,7 @@ export class EngineManager {
       this.lastError = null;
       this.setStatus('ready');
       this.touchIdleTimer();
-      this.logger.info('Local engine ready', { port, gpu: this.resolved.gpu });
+      this.logger.info('Local engine ready', { port, gpu: this.resolved.gpu, model: this.resolved.model });
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
       this.setStatus('error');

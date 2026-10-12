@@ -16,6 +16,7 @@ import os from 'os';
 import path from 'path';
 import { Logger } from '../shared/logger';
 import { detectNvidiaGpu, GpuCheck } from './gpuDetect';
+import { chooseModelSize, LocalModelChoice, ModelSize } from '../shared/engineModel';
 
 /**
  * Resolves the local whisper.cpp engine's binary, model and VAD files.
@@ -37,9 +38,12 @@ export interface EngineAssetProgress {
 
 export type ProgressFn = (p: EngineAssetProgress) => void;
 
-const MODEL_FILE = 'ggml-large-v3-turbo-q5_0.bin';
-const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_FILE}`;
-const MODEL_MIN_BYTES = 400 * 1024 * 1024;
+const MODELS: Record<ModelSize, { file: string; minBytes: number }> = {
+  large: { file: 'ggml-large-v3-turbo-q5_0.bin', minBytes: 400 * 1024 * 1024 },
+  // For PCs without NVIDIA: ~4x faster on the processor (see shared/engineModel.ts).
+  small: { file: 'ggml-small-q5_1.bin', minBytes: 150 * 1024 * 1024 },
+};
+const modelUrl = (size: ModelSize) => `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODELS[size].file}`;
 
 const VAD_FILE = 'ggml-silero-v5.1.2.bin';
 const VAD_URL = `https://huggingface.co/ggml-org/whisper-vad/resolve/main/${VAD_FILE}`;
@@ -51,6 +55,7 @@ const CUDA_ZIP_URL =
 export interface ResolvedEngine {
   binaryPath: string;
   modelPath: string;
+  model: ModelSize;
   vadPath: string | null;
   gpu: boolean;
   /** How the GPU check went; 'unavailable' means worth checking again later. */
@@ -319,7 +324,42 @@ async function downloadFfmpeg(logger: Logger, onProgress: ProgressFn): Promise<s
  * Ensure the binary + model + VAD are available, downloading what's missing.
  * Returns the resolved paths for the EngineManager to launch whisper-server.
  */
-export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () => {}): Promise<ResolvedEngine> {
+/** Model sizes already on disk (no download). */
+export function downloadedModelSizes(): ModelSize[] {
+  return (Object.keys(MODELS) as ModelSize[]).filter((size) =>
+    fileAtLeast(path.join(modelsDir(), MODELS[size].file), MODELS[size].minBytes),
+  );
+}
+
+/**
+ * Offline reserve for OpenAI/custom users: fetch the small model and the VAD
+ * once, in the background, so a dictation without internet can still be done
+ * here (~190 MB instead of the 550 MB model plus a 1 GB GPU build).
+ */
+export async function prepareOfflineReserve(logger: Logger): Promise<void> {
+  if (downloadedModelSizes().length === 0) {
+    logger.info('Preparing the offline reserve: downloading the small speech model');
+    await download(modelUrl('small'), path.join(modelsDir(), MODELS.small.file), 'model', () => {}, logger);
+  }
+  const vadPath = path.join(modelsDir(), VAD_FILE);
+  if (!fileAtLeast(vadPath, VAD_MIN_BYTES)) {
+    await download(VAD_URL, vadPath, 'vad', () => {}, logger);
+  }
+  logger.info('Offline reserve ready', { models: downloadedModelSizes() });
+}
+
+export interface ResolveOptions {
+  choice?: LocalModelChoice;
+  /** false: use only what is on disk (no internet, offline reserve). */
+  allowDownload?: boolean;
+}
+
+export async function resolveEngine(
+  logger: Logger,
+  onProgress: ProgressFn = () => {},
+  options: ResolveOptions = {},
+): Promise<ResolvedEngine> {
+  const allowDownload = options.allowDownload ?? true;
   const gpuCheck: GpuCheck = process.platform === 'win32' ? await detectNvidiaGpu() : 'no-driver'; // mac: Metal is built in
   const gpu = gpuCheck === 'gpu';
   if (gpuCheck === 'unavailable') {
@@ -328,27 +368,37 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
 
   // Binary: CUDA (win+nvidia) or the bundled CPU build.
   let binDir = bundledBinDir();
-  if (gpu) {
+  if (gpu && allowDownload) {
     const cudaDir = await resolveCudaBinary(logger, onProgress);
     if (cudaDir) binDir = cudaDir;
+  } else if (gpu) {
+    const cudaExe = path.join(engineDir(), 'bin-gpu', serverExeName());
+    if (existsSync(cudaExe)) binDir = path.dirname(cudaExe);
   }
   const binaryPath = path.join(binDir, serverExeName());
   if (!existsSync(binaryPath)) {
     throw new Error(`Local engine binary missing: ${binaryPath}. Reinstall VoicePaste.`);
   }
 
-  // Model: reuse legacy or a previous download, else fetch.
-  let modelPath = path.join(modelsDir(), MODEL_FILE);
+  // Model: the size that suits this machine; reuse legacy or a previous
+  // download, else fetch. Without downloads, whatever size is on disk.
+  let model = chooseModelSize(options.choice ?? 'auto', process.platform, gpuCheck);
+  if (!allowDownload && !downloadedModelSizes().includes(model)) {
+    const onDisk = downloadedModelSizes();
+    if (!onDisk.length) throw new Error('No speech model on this computer yet');
+    model = onDisk[0];
+  }
+  let modelPath = path.join(modelsDir(), MODELS[model].file);
   const legacy = legacyServerDir();
-  const legacyModel = legacy ? path.join(legacy, 'models', MODEL_FILE) : null;
-  if (fileAtLeast(modelPath, MODEL_MIN_BYTES)) {
+  const legacyModel = legacy ? path.join(legacy, 'models', MODELS[model].file) : null;
+  if (fileAtLeast(modelPath, MODELS[model].minBytes)) {
     // already downloaded
-  } else if (legacyModel && fileAtLeast(legacyModel, MODEL_MIN_BYTES)) {
+  } else if (legacyModel && fileAtLeast(legacyModel, MODELS[model].minBytes)) {
     logger.info('Reusing legacy model', { path: legacyModel });
     modelPath = legacyModel;
   } else {
-    logger.info('Downloading speech model (one-time setup)');
-    await download(MODEL_URL, modelPath, 'model', onProgress, logger);
+    logger.info('Downloading speech model (one-time setup)', { model });
+    await download(modelUrl(model), modelPath, 'model', onProgress, logger);
   }
 
   // VAD: reuse or fetch (non-fatal).
@@ -358,6 +408,8 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     // present
   } else if (legacyVad && fileAtLeast(legacyVad, VAD_MIN_BYTES)) {
     vadPath = legacyVad;
+  } else if (!allowDownload) {
+    vadPath = null;
   } else {
     try {
       await download(VAD_URL, vadPath, 'vad', onProgress, logger);
@@ -370,7 +422,7 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
   // ffmpeg: bundled/downloaded/PATH, else fetch a static build — without it
   // whisper-server's --convert exits at startup and nothing transcribes.
   let ffmpeg = findFfmpeg();
-  if (!ffmpeg.available) {
+  if (!ffmpeg.available && allowDownload) {
     try {
       ffmpeg = { dir: await downloadFfmpeg(logger, onProgress), available: true };
     } catch (error) {
@@ -380,7 +432,7 @@ export async function resolveEngine(logger: Logger, onProgress: ProgressFn = () 
     }
   }
 
-  return { binaryPath, modelPath, vadPath, gpu, gpuCheck, ffmpegDir: ffmpeg.dir };
+  return { binaryPath, modelPath, model, vadPath, gpu, gpuCheck, ffmpegDir: ffmpeg.dir };
 }
 
 /** Approx idle threads: leave headroom for the rest of the system. */

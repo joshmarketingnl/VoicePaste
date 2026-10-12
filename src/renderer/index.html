@@ -176,6 +176,28 @@
             <option id="languageModeOptionEn" value="en">English only</option>
           </select>
         </div>
+        <div id="localModelField" class="settings-field">
+          <span id="localModelLabel" class="settings-label">Speed of the local engine</span>
+          <select id="localModelSelect" class="settings-input settings-select">
+            <option id="localModelOptionAuto" value="auto">Automatic (recommended)</option>
+            <option id="localModelOptionAccurate" value="accurate">Accurate (large model)</option>
+            <option id="localModelOptionFast" value="fast">Fast (small model)</option>
+          </select>
+        </div>
+        <div id="localModelHint" class="settings-hint settings-hint-spaced"></div>
+        <div id="offlineFallbackField" class="settings-field">
+          <span id="offlineFallbackLabel" class="settings-label">Without internet, transcribe on this computer</span>
+          <label class="settings-toggle" for="offlineFallbackInput" aria-label="Without internet, transcribe on this computer">
+            <input id="offlineFallbackInput" type="checkbox" />
+            <span class="settings-toggle-track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div id="offlineFallbackHint" class="settings-hint settings-hint-spaced"></div>
+        <label class="settings-field" for="vocabularyInput">
+          <span id="vocabularyLabel" class="settings-label">Word list</span>
+          <textarea id="vocabularyInput" class="settings-input settings-textarea" rows="3" spellcheck="false"></textarea>
+        </label>
+        <div id="vocabularyHint" class="settings-hint settings-hint-spaced"></div>
         <div class="settings-field">
           <span id="recordHotkeyLabel" class="settings-label">Record hotkey</span>
           <div class="settings-inline">
@@ -389,6 +411,20 @@
             </button>
           </div>
         </label>
+        <div id="recordKeyPastesField" class="settings-field">
+          <span id="recordKeyPastesLabel" class="settings-label">Record key also stops and pastes</span>
+          <label class="settings-toggle" for="recordKeyPastesInput" aria-label="Record key also stops and pastes">
+            <input id="recordKeyPastesInput" type="checkbox" />
+            <span class="settings-toggle-track" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div id="keepHistoryField" class="settings-field">
+          <span id="keepHistoryLabel" class="settings-label">Keep recent dictations</span>
+          <label class="settings-toggle" for="keepHistoryInput" aria-label="Keep recent dictations">
+            <input id="keepHistoryInput" type="checkbox" />
+            <span class="settings-toggle-track" aria-hidden="true"></span>
+          </label>
+        </div>
         <div class="settings-field">
           <span id="indicatorStyleLabel" class="settings-label">Detailed indicator</span>
           <label class="settings-toggle" for="indicatorStyleInput" aria-label="Detailed indicator">

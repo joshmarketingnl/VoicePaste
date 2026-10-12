@@ -29,6 +29,11 @@ interface VoicepasteSettings {
   indicatorStyle: 'dot' | 'detailed';
   engine: 'local' | 'openai' | 'custom';
   languageMode: 'nl-en' | 'nl' | 'en';
+  localModel: 'auto' | 'accurate' | 'fast';
+  recordKeyPastes: boolean;
+  vocabulary: string;
+  keepHistory: boolean;
+  offlineFallback: boolean;
   providerCode: string;
   modelCode: string;
   apiKey: string;

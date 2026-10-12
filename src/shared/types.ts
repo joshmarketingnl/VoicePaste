@@ -1,3 +1,5 @@
+import type { LocalModelChoice } from './engineModel';
+
 export type AppState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'error';
 // 'nl-en' = Dutch or English per recording (default); a third language is never
 // accepted. 'nl'/'en' force one language. Only Dutch and English are offered;
@@ -36,5 +38,15 @@ export interface AppConfig {
    *  model memory (0 = keep it loaded forever). Waking adds a few seconds to
    *  the first dictation after a pause. */
   engineIdleSleepMinutes: number;
+  /** Local speech model: 'auto' = large on a Mac or with NVIDIA, small otherwise. */
+  localModel: LocalModelChoice;
+  /** The record key also stops, transcribes and pastes while recording. */
+  recordKeyPastes: boolean;
+  /** Names and jargon to expect, one per line or comma-separated. */
+  vocabulary: string;
+  /** Keep the last 10 dictations on this computer (tray menu). */
+  keepHistory: boolean;
+  /** OpenAI/custom without a connection: transcribe on this computer instead. */
+  offlineFallback: boolean;
   apiKey?: string;
 }
