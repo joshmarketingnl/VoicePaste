@@ -40,7 +40,7 @@ You can mix Dutch and English. Long dictations are fine: a ten-minute recording 
 
 Click the VoicePaste icon (Windows: tray; Mac: menu bar at the top) and choose **Settings**. There you can set:
 
-- **Spoken language**: Dutch + English (recommended), Dutch only, English only or Spanish only.
+- **Spoken language**: Dutch + English (recommended), Dutch only or English only.
 - **App language**: Dutch or English.
 - **Hotkeys**: click a key, press the new combination and save.
 - **Engine**: by default local, on your computer. With your own OpenAI key it can also run through OpenAI. Note: your audio then does go to OpenAI, and OpenAI charges your account per minute.

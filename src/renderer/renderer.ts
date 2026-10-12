@@ -16,7 +16,7 @@ type UiLanguage = 'en' | 'nl';
 type StatusTone = 'neutral' | 'error' | 'success';
 
 type TranscriptionEngine = 'local' | 'openai' | 'custom';
-type LanguageMode = 'nl-en' | 'nl' | 'en' | 'es';
+type LanguageMode = 'nl-en' | 'nl' | 'en';
 
 interface RendererSettings {
   developerMode: boolean;
@@ -67,7 +67,6 @@ const languageModeSelect = document.getElementById('languageModeSelect') as HTML
 const languageModeOptionNlEn = document.getElementById('languageModeOptionNlEn') as HTMLOptionElement;
 const languageModeOptionNl = document.getElementById('languageModeOptionNl') as HTMLOptionElement;
 const languageModeOptionEn = document.getElementById('languageModeOptionEn') as HTMLOptionElement;
-const languageModeOptionEs = document.getElementById('languageModeOptionEs') as HTMLOptionElement;
 type WelcomeInfo = Parameters<Parameters<Window['voicepaste']['onShowWelcome']>[0]>[0];
 
 const updatePanel = document.getElementById('updatePanel') as HTMLElement;
@@ -383,7 +382,6 @@ const UI_TEXT: Record<
       'nl-en': 'Dutch + English (recommended)',
       nl: 'Dutch only',
       en: 'English only',
-      es: 'Spanish only',
     },
     providerCode: 'Provider code',
     modelCode: 'Model code',
@@ -486,7 +484,6 @@ const UI_TEXT: Record<
       'nl-en': 'Nederlands + Engels (aanbevolen)',
       nl: 'Alleen Nederlands',
       en: 'Alleen Engels',
-      es: 'Alleen Spaans',
     },
     providerCode: 'Provider-code',
     modelCode: 'Model-code',
@@ -660,7 +657,6 @@ function applyLocalizedLabels() {
   languageModeOptionNlEn.textContent = uiText.languageModeOptions['nl-en'];
   languageModeOptionNl.textContent = uiText.languageModeOptions.nl;
   languageModeOptionEn.textContent = uiText.languageModeOptions.en;
-  languageModeOptionEs.textContent = uiText.languageModeOptions.es;
   engineHint.textContent = uiText.engineHint[(engineSelect.value as TranscriptionEngine) || 'local'];
   providerCodeLabel.textContent = uiText.providerCode;
   modelCodeLabel.textContent = uiText.modelCode;
@@ -1116,8 +1112,6 @@ function applySettingsToView(settings: RendererSettings) {
   developerModeInput.checked = settingsDraft.developerMode;
   indicatorStyleInput.checked = settingsDraft.indicatorStyle === 'detailed';
   engineSelect.value = settingsDraft.engine;
-  // Spanish stays available for whoever already chose it, but isn't offered.
-  languageModeOptionEs.hidden = settingsDraft.languageMode !== 'es';
   languageModeSelect.value = settingsDraft.languageMode;
   providerCodeInput.value = settingsDraft.providerCode;
   modelCodeInput.value = settingsDraft.modelCode;

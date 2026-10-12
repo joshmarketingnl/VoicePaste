@@ -1,7 +1,8 @@
 export type AppState = 'idle' | 'recording' | 'transcribing' | 'ready' | 'error';
 // 'nl-en' = Dutch or English per recording (default); a third language is never
-// accepted. 'nl'/'en'/'es' force one language. The old 'auto' is migrated to 'nl-en'.
-export type LanguageMode = 'nl-en' | 'nl' | 'en' | 'es';
+// accepted. 'nl'/'en' force one language. Only Dutch and English are offered;
+// the old 'auto' and 'es' are migrated to 'nl-en'.
+export type LanguageMode = 'nl-en' | 'nl' | 'en';
 export type IndicatorMode = 'showAlways' | 'onlyWhenActive';
 export type IndicatorStyle = 'dot' | 'detailed';
 export type UiLanguage = 'en' | 'nl';

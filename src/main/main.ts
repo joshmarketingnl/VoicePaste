@@ -278,7 +278,7 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
     (payload.uiLanguage !== 'en' && payload.uiLanguage !== 'nl') ||
     (payload.indicatorStyle !== 'dot' && payload.indicatorStyle !== 'detailed') ||
     (payload.engine !== 'local' && payload.engine !== 'openai' && payload.engine !== 'custom') ||
-    (payload.languageMode !== undefined && !['nl-en', 'nl', 'en', 'es'].includes(payload.languageMode)) ||
+    (payload.languageMode !== undefined && !['nl-en', 'nl', 'en'].includes(payload.languageMode)) ||
     typeof payload.providerCode !== 'string' ||
     typeof payload.modelCode !== 'string' ||
     typeof payload.apiKey !== 'string'

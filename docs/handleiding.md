@@ -40,7 +40,7 @@ Je kunt Nederlands en Engels door elkaar gebruiken. Lange stukken zijn geen prob
 
 Klik op het VoicePaste-icoon (Windows: systeemvak; Mac: menubalk bovenin) en kies **Settings**. Daar stel je in:
 
-- **Gesproken taal**: Nederlands + Engels (aanbevolen), alleen Nederlands, alleen Engels of alleen Spaans.
+- **Gesproken taal**: Nederlands + Engels (aanbevolen), alleen Nederlands of alleen Engels.
 - **Taal van de app**: Nederlands of Engels.
 - **Sneltoetsen**: klik op een toets, druk de nieuwe combinatie in en sla op.
 - **Motor**: standaard lokaal op je computer. Heb je een eigen OpenAI-sleutel, dan kan het ook via OpenAI. Let op: dan gaat je geluid wel naar OpenAI en rekent OpenAI per minuut af op jouw account.

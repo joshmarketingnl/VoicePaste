@@ -28,7 +28,7 @@ interface VoicepasteSettings {
   uiLanguage: 'en' | 'nl';
   indicatorStyle: 'dot' | 'detailed';
   engine: 'local' | 'openai' | 'custom';
-  languageMode: 'nl-en' | 'nl' | 'en' | 'es';
+  languageMode: 'nl-en' | 'nl' | 'en';
   providerCode: string;
   modelCode: string;
   apiKey: string;

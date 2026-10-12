@@ -68,7 +68,7 @@ export function isLocalProvider(provider: string): boolean {
 }
 
 function isLanguageMode(value: unknown): value is LanguageMode {
-  return value === 'nl-en' || value === 'en' || value === 'nl' || value === 'es';
+  return value === 'nl-en' || value === 'en' || value === 'nl';
 }
 
 function isIndicatorMode(value: unknown): value is IndicatorMode {

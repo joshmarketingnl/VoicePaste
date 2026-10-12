@@ -62,6 +62,24 @@ Oplevering: één artifact met vóór/ná en ja/nee per punt (zoals 2.4). Antwoo
 - Roadmap 2.5 uit data: stop+plak = 94% → optie één toets; CPU-only pc's (meten!) → kleiner model/Vulkan;
   geschiedenis laatste dictaten; woordenlijst (namen); cloud→lokaal bij geen netwerk; ondertekening.
 
+## GO van Josh (12-10, via orchestratie-agent) → release "VoicePaste 2.0"
+Letterlijk: "je mag alles van VoicePaste wel toevoegen, maar ik zou het dan wel VoicePaste 2.0 noemen…
+talen alleen Nederlands en Engels… alles doorvoeren naar GitHub. Frank gebruikt Windows en heeft een eigen OpenAI key."
+Plan (status bijhouden met [x]):
+- [ ] Talen: alleen NL+EN (LanguageMode 'es' weg uit types/config/UI/docs; oude 'es' → 'nl-en').
+- [ ] R1 lokaal model: `localModel: 'auto'|'accurate'|'fast'`; auto = groot op Mac of NVIDIA, klein (ggml-small-q5_1) op pc zonder NVIDIA. Instelling.
+- [ ] R2 optie: opnemen-toets stopt+plakt tijdens opname (`recordKeyPastes`, standaard uit).
+- [ ] R3 woordenlijst (`vocabulary`) als whisper `prompt`; eerst meten (nltech-clip + stilte).
+- [ ] R4 geschiedenis laatste 10 (`keepHistory`, standaard aan, userData/history.json, tray-submenu kopieert).
+- [ ] R6 offline-reserve (`offlineFallback`, standaard aan): openai/custom + geen verbinding → lokaal omzetten als het model er is; model op de achtergrond klaarzetten.
+- [ ] Docs bijwerken (handleiding/manual/README-kop).
+- [ ] Versie 2.5.0 (technisch; updater werkt alleen naar hoger dan 2.3.0), releasetitel "VoicePaste 2.0".
+- [ ] Merge naar main, tag v2.5.0, CI (build-macos levert assets; e2e-smoke), release met alle assets + VoicePaste-Setup.exe-kopie.
+- [ ] Releasebericht voor Frank (Windows, eigen OpenAI-sleutel), zonder AI-taal.
+- [ ] Reviewpagina bijwerken (uitgebracht, vóór/ná) + melden aan orchestratie-agent.
+Niet: R5 (openbare reactie whisper.cpp, geen expliciete ja) en Apple-ondertekening ($99/jr, Josh moet zelf
+aanmelden + expliciet ja op kosten) → open punten.
+
 ## Review-artifact 2.5
 https://claude.ai/artifact/6rN5q3YjXHSG9kxAfc1f9b · db-collectie `keuzes`, doc-ids: stilte-crash, dubbele-motor,
 hangen, microfoon, opnieuw-proberen, welkom, mac-toestemming, handleiding, diagnose, klein, r-klein-model,

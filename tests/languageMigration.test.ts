@@ -48,7 +48,8 @@ describe('languageMode migration', () => {
   it('keeps a deliberately chosen single language', () => {
     expect(mergeConfig({ languageMode: 'nl' }, 'win32').languageMode).toBe('nl');
     expect(mergeConfig({ languageMode: 'en' }, 'win32').languageMode).toBe('en');
-    expect(mergeConfig({ languageMode: 'es' }, 'win32').languageMode).toBe('es');
+    // Only Dutch and English are offered (Josh, 12-10): Spanish falls back to nl-en.
+    expect(mergeConfig({ languageMode: 'es' as never }, 'win32').languageMode).toBe('nl-en');
   });
 
   it('leaves key, engine, model, provider, hotkeys and every other setting untouched', () => {
