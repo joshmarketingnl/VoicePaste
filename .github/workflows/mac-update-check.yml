@@ -77,6 +77,10 @@ jobs:
           echo "--- app.log ---"; cat "$LOG" || true
           grep 'Mac update offered' "$LOG" | grep -q '"version":"9.9.2"'
           grep 'Mac update offered' "$LOG" | grep -q 'arm64-mac.zip'
+          # 2.5: the permission check ran (what the runner grants varies, so
+          # only its presence and shape are asserted; the line is printed).
+          grep 'Permission check' "$LOG"
+          grep 'Permission check' "$LOG" | grep -q '"accessibility":'
           AFTER=$(shasum -a 256 "$DATA/config.json" | cut -c1-16)
           echo "config.json before $BEFORE after $AFTER"
           test "$BEFORE" = "$AFTER"

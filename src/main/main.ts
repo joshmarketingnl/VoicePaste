@@ -121,6 +121,8 @@ const TRAY_TITLE_FALLBACK = 'VP';
 const HOTKEY_MODIFIER_PARTS = new Set(['command', 'commandorcontrol', 'control', 'ctrl', 'alt', 'shift', 'super']);
 const WINDOWS_LAUNCH_HIDDEN_ARG = '--launch-hidden';
 const APP_USER_MODEL_ID = 'com.voicepaste.developerbeta.v11';
+const MANUAL_URL_NL = 'https://github.com/joshmarketingnl/VoicePaste/blob/main/docs/handleiding.md';
+const MANUAL_URL_EN = 'https://github.com/joshmarketingnl/VoicePaste/blob/main/docs/manual.md';
 const SETTINGS_HOTKEY_KEYS: SettingsHotkeyKey[] = [
   'toggleRecord',
   'pasteTranscript',
@@ -1405,6 +1407,12 @@ function updateTrayMenu() {
       label: 'Settings',
       click: () => {
         requestOpenSettingsPanel('tray-menu-settings');
+      },
+    },
+    {
+      label: config.uiLanguage === 'nl' ? 'Handleiding en vragen' : 'Manual and FAQ',
+      click: () => {
+        void shell.openExternal(config.uiLanguage === 'nl' ? MANUAL_URL_NL : MANUAL_URL_EN);
       },
     },
     {

@@ -9,13 +9,14 @@ name: e2e-smoke
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'voorstel/**']
     paths:
       - 'src/**'
       - 'scripts/**'
       - 'resources/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'tests/**'
       - '.github/workflows/e2e-smoke.yml'
 
 jobs:
@@ -27,9 +28,11 @@ jobs:
           - os: windows-latest
             models-path: ~\AppData\Roaming\voicepaste-developer-beta-v1.1\engine\models
             log-path: ~\AppData\Roaming\voicepaste-developer-beta-v1.1\logs\app.log
+            engine-path: AppData/Roaming/voicepaste-developer-beta-v1.1/engine
           - os: macos-14
             models-path: ~/Library/Application Support/voicepaste-developer-beta-v1.1/engine/models
             log-path: ~/Library/Application Support/voicepaste-developer-beta-v1.1/logs/app.log
+            engine-path: Library/Application Support/voicepaste-developer-beta-v1.1/engine
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +93,24 @@ jobs:
 
       - name: Run smoke test
         run: node scripts/e2e-smoke.mjs smoke.wav
+
+      # The real app with a wav file as microphone: normal, stop+paste, cancel,
+      # mic lost, sleep, engine crash, no signal, too short, offline+retry and
+      # a 160 s two-segment recording. Uses the model the smoke test fetched.
+      - name: Run recording test (fake microphone)
+        shell: bash
+        env:
+          E2E_RESULTS: e2e-results.json
+          E2E_TRANSCRIBE_TIMEOUT_MS: '900000'
+        run: node scripts/e2e-recording.mjs --engine-source "$HOME/${{ matrix.engine-path }}" --long
+
+      - name: Upload recording test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-recording-${{ runner.os }}
+          path: e2e-results.json
+          if-no-files-found: ignore
 
       - name: Upload app log on failure
         if: failure()

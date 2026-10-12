@@ -263,6 +263,7 @@ const UI_TEXT: Record<
     welcome: {
       titles: Record<WelcomeInfo['reason'], string>;
       intros: Record<WelcomeInfo['reason'], string>;
+      firstRunMac: string;
       steps: (record: string, paste: string) => [string, string, string];
       mic: string;
       paste: string;
@@ -350,6 +351,7 @@ const UI_TEXT: Record<
         'after-update':
           'macOS forgets this permission with every new version of an app that is not signed by Apple. Turn VoicePaste off and on again below.',
       },
+      firstRunMac: 'Speech becomes text, entirely on this computer. VoicePaste waits in the menu bar at the top of the screen.',
       steps: (record, paste) => [
         `Press ${record} and talk.`,
         `Press ${paste} to stop. The text is pasted where your cursor is.`,
@@ -452,6 +454,7 @@ const UI_TEXT: Record<
         'after-update':
           'macOS vergeet deze toestemming bij elke nieuwe versie van een app die niet door Apple is ondertekend. Zet VoicePaste hieronder uit en weer aan.',
       },
+      firstRunMac: 'Spraak wordt tekst, helemaal op deze computer. VoicePaste wacht in de menubalk bovenin je scherm.',
       steps: (record, paste) => [
         `Druk op ${record} en praat.`,
         `Druk op ${paste} om te stoppen. De tekst wordt geplakt waar je cursor staat.`,
@@ -512,7 +515,7 @@ const UI_TEXT: Record<
     cancel: 'Annuleren',
     save: 'Opslaan',
     record: 'Opnemen',
-    copy: 'Kopieren',
+    copy: 'Kopiëren',
     loadingSettings: 'Instellingen laden...',
     settingsSaved: 'Instellingen opgeslagen.',
     hotkeyCaptured: 'Hotkey vastgelegd. Klik op Opslaan om toe te passen.',
@@ -1468,7 +1471,8 @@ function renderWelcome() {
   if (!welcomeInfo) return;
   const text = getUiText().welcome;
   welcomeTitle.textContent = text.titles[welcomeInfo.reason];
-  welcomeIntro.textContent = text.intros[welcomeInfo.reason];
+  welcomeIntro.textContent =
+    welcomeInfo.reason === 'first-run' && welcomeInfo.platform === 'darwin' ? text.firstRunMac : text.intros[welcomeInfo.reason];
   const steps = text.steps(formatHotkeyForUi(welcomeInfo.hotkeys.record), formatHotkeyForUi(welcomeInfo.hotkeys.paste));
   steps.forEach((step, i) => {
     welcomeStepItems[i].textContent = step;
