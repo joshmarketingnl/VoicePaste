@@ -21,10 +21,10 @@ import { Logger } from '../shared/logger';
 import { loadConfig, saveConfig } from './config';
 import { createLogger } from './logger';
 import { StateMachine } from './stateMachine';
-import { transcribeSegments, TranscriptionTarget } from './transcription';
+import { createSegmentTranscriber, transcribeSegments, TranscriptionTarget } from './transcription';
 import { EngineManager, EngineStatus } from './engineManager';
 import type { EngineAssetProgress } from './engineAssets';
-import { pasteTranscript, shutdownPasteHelper } from './paste';
+import { pasteTranscript, shutdownPasteHelper, warmPasteHelper } from './paste';
 import { getUpdateStatus, installUpdateNow, openDownloadPage, startUpdater, UpdateStatus } from './updater';
 import { createTrayIcon } from './trayIcon';
 import {
@@ -1775,6 +1775,33 @@ function cleanupSession(sessionId: string, segmentPaths: string[]) {
   sessionDirs.delete(sessionId);
 }
 
+// Long recordings: each ~90 s segment is transcribed as soon as it's saved,
+// while the user keeps talking, so stopping only waits for the last one
+// (field: a 10-minute dictation waited 16 s after stop). Local engine only,
+// so abandoning a recording never costs API money. One at a time, in order.
+const earlyTranscripts = new Map<string, Promise<string>>();
+let earlyTranscriptionQueue: Promise<unknown> = Promise.resolve();
+
+function startEarlyTranscription(segmentPath: string) {
+  if (config.engine !== 'local' || stateMachine.getState() !== 'recording') {
+    return;
+  }
+  const job = earlyTranscriptionQueue.then(async () => {
+    const target = await resolveTranscriptionTarget();
+    return createSegmentTranscriber(config, target, logger)(segmentPath);
+  });
+  // Errors surface when the recording is stopped (and the segment is redone).
+  job.catch(() => {});
+  earlyTranscriptionQueue = job.catch(() => {});
+  earlyTranscripts.set(segmentPath, job);
+}
+
+function forgetEarlyTranscripts(segmentPaths: string[]) {
+  for (const segmentPath of segmentPaths) {
+    earlyTranscripts.delete(segmentPath);
+  }
+}
+
 function setupIpcHandlers() {
   ipcMain.handle('beginRecordingSession', () => {
     const session = ensureSessionDir();
@@ -1828,6 +1855,7 @@ function setupIpcHandlers() {
 
   ipcMain.on('audioSegmentReady', (_event, payload: { path: string; index: number; bytes: number }) => {
     logger.debug('Segment ready', payload);
+    startEarlyTranscription(payload.path);
   });
 
   ipcMain.on(
@@ -1866,7 +1894,7 @@ function setupIpcHandlers() {
       const isTranscriptionJobCancelled = () => cancelledTranscriptionJobIds.has(transcriptionJobId);
 
       try {
-        const transcript = await transcribeSegments(segmentPaths, config, target, logger);
+        const transcript = await transcribeSegments(segmentPaths, config, target, logger, earlyTranscripts);
         if (isTranscriptionJobCancelled()) {
           logger.info('Transcription result ignored; job cancelled', { transcriptionJobId });
           return;
@@ -1893,6 +1921,7 @@ function setupIpcHandlers() {
         reportRecoverableError('transcription-failed', message, { error: String(error) });
       } finally {
         cancelledTranscriptionJobIds.delete(transcriptionJobId);
+        forgetEarlyTranscripts(segmentPaths);
         cleanupSession(sessionId, segmentPaths);
         activeTranscriptionJobs = Math.max(0, activeTranscriptionJobs - 1);
       }
@@ -1902,6 +1931,7 @@ function setupIpcHandlers() {
   ipcMain.on('recordingCancelled', (_event, payload: { sessionId: string; segmentPaths: string[] }) => {
     const { sessionId, segmentPaths } = payload;
     clearQueuedPaste('recording-cancelled');
+    forgetEarlyTranscripts(segmentPaths);
     logger.info('Recording cancelled', { sessionId });
     stateMachine.transition('idle', 'Recording cancelled');
     sendStateUpdate('idle', 'Idle');
@@ -2206,6 +2236,10 @@ function initializeApp() {
   updateIndicatorVisibility('idle');
   updateCursorIndicatorForState('idle', 'initialize');
   updateTrayMenu();
+
+  // Have the Windows paste helper ready before the first paste (cold start
+  // after boot otherwise costs seconds on that first paste).
+  setTimeout(() => warmPasteHelper(), 5_000);
 
   startUpdater({
     logger,

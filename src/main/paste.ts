@@ -60,9 +60,17 @@ const HELPER_SCRIPT = [
 
 const HELPER_ACK_TIMEOUT_MS = 1_500;
 const MODIFIER_WAIT_MAX_MS = 2_000;
+// Compiling the helper's Add-Type takes ~0.5 s normally but several seconds
+// right after boot. Give startup room, and never make a paste wait for it:
+// a paste that finds the helper still starting uses the one-shot fallback
+// and leaves the helper to finish (field: first paste after boot took 4.5 s
+// because the helper was killed at 1.5 s and the fallback compiled again).
+const HELPER_START_TIMEOUT_MS = 20_000;
+const PASTE_WAITS_FOR_START_MS = 1_500;
 
 let helper: ChildProcess | null = null;
 let helperReady: Promise<void> | null = null;
+let helperIsReady = false;
 
 function disposeHelper(): void {
   if (helper) {
@@ -73,6 +81,7 @@ function disposeHelper(): void {
   }
   helper = null;
   helperReady = null;
+  helperIsReady = false;
 }
 
 function ensureHelper(): Promise<void> {
@@ -92,11 +101,15 @@ function ensureHelper(): Promise<void> {
   });
 
   helperReady = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Paste helper did not start')), HELPER_ACK_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      if (helper === proc) disposeHelper();
+      reject(new Error('Paste helper did not start'));
+    }, HELPER_START_TIMEOUT_MS);
     const onData = (chunk: Buffer) => {
       if (chunk.toString().includes('ready')) {
         clearTimeout(timer);
         proc.stdout?.off('data', onData);
+        if (helper === proc) helperIsReady = true;
         resolve();
       }
     };
@@ -107,12 +120,33 @@ function ensureHelper(): Promise<void> {
     });
   });
 
+  // Nobody may be awaiting this yet (warm-up); keep a failed start quiet.
+  helperReady.catch(() => {});
   return helperReady;
+}
+
+class HelperNotReadyYet extends Error {}
+
+/** Start the helper ahead of the first paste. Safe to call repeatedly. */
+export function warmPasteHelper(): void {
+  if (process.platform === 'win32') {
+    void ensureHelper().catch(() => {});
+  }
+}
+
+/** The helper's readiness, but give up after `ms` without stopping it. */
+function helperReadyWithin(ms: number): Promise<void> {
+  const ready = ensureHelper();
+  if (helperIsReady) return ready;
+  return Promise.race([
+    ready,
+    new Promise<void>((_, reject) => setTimeout(() => reject(new HelperNotReadyYet('Paste helper still starting')), ms)),
+  ]);
 }
 
 /** Resolves with the ms spent waiting for the hotkey's modifiers to be released. */
 function pasteViaHelper(): Promise<number> {
-  return ensureHelper().then(
+  return helperReadyWithin(PASTE_WAITS_FOR_START_MS).then(
     () =>
       new Promise<number>((resolve, reject) => {
         const proc = helper;
@@ -166,10 +200,13 @@ async function triggerPasteKeystroke(): Promise<number | null> {
   if (process.platform === 'win32') {
     try {
       return await pasteViaHelper();
-    } catch {
+    } catch (error) {
       // Helper wedged or killed (antivirus, policy) — fall back to the
       // one-shot spawn so a paste never fails just because of the helper.
-      disposeHelper();
+      // A helper that is merely still starting keeps going for next time.
+      if (!(error instanceof HelperNotReadyYet)) {
+        disposeHelper();
+      }
       await runCommand('powershell', ['-NoProfile', '-Command', FALLBACK_SCRIPT]);
       return null;
     }

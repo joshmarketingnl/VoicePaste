@@ -133,3 +133,45 @@ describe('transcribeSegments with a forced language', () => {
     expect(requests[0].language).toBe('en');
   });
 });
+
+describe('transcribeSegments with segments started during recording', () => {
+  const second = path.join(path.dirname(segment), 'segment-0001.webm');
+  fs.writeFileSync(second, Buffer.from('more audio'));
+
+  it('uses an early result instead of sending that segment again', async () => {
+    replies = [{ body: { text: 'Tweede deel.', language: 'dutch' } }];
+    const early = new Map([[segment, Promise.resolve('Eerste deel.')]]);
+
+    const text = await transcribeSegments(
+      [segment, second],
+      config({ engine: 'local', languageMode: 'nl-en' }),
+      { baseUrl, apiKey: '' },
+      logger,
+      early,
+    );
+
+    expect(text).toBe('Eerste deel. Tweede deel.');
+    expect(requests).toHaveLength(1);
+  });
+
+  it('redoes a segment whose early attempt failed', async () => {
+    replies = [
+      { body: { text: 'Eerste deel.', language: 'dutch' } },
+      { body: { text: 'Tweede deel.', language: 'dutch' } },
+    ];
+    const failed = Promise.reject(new Error('engine restarted'));
+    failed.catch(() => {});
+    const early = new Map([[segment, failed]]);
+
+    const text = await transcribeSegments(
+      [segment, second],
+      config({ engine: 'local', languageMode: 'nl-en' }),
+      { baseUrl, apiKey: '' },
+      logger,
+      early,
+    );
+
+    expect(text).toBe('Eerste deel. Tweede deel.');
+    expect(requests).toHaveLength(2);
+  });
+});

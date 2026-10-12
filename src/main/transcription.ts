@@ -102,12 +102,16 @@ async function requestAttempt(
   return { text: response.text ?? '' };
 }
 
-export async function transcribeSegments(
-  segmentPaths: string[],
+/**
+ * Returns a function that transcribes one segment with everything the app
+ * applies per segment (response format, nl-en language guard). Reused across
+ * the segments of one recording so a format fallback sticks.
+ */
+export function createSegmentTranscriber(
   config: AppConfig,
   target: TranscriptionTarget,
   logger: Logger,
-): Promise<string> {
+): (segmentPath: string) => Promise<string> {
   const client = new OpenAI({
     apiKey: target.apiKey || LOCAL_TRANSCRIPTION_API_KEY,
     baseURL: target.baseUrl,
@@ -129,27 +133,23 @@ export async function transcribeSegments(
     }
   };
 
-  const parts: string[] = [];
-  for (const segmentPath of segmentPaths) {
+  return async (segmentPath: string): Promise<string> => {
     logger.info('Transcribing segment', { path: segmentPath });
 
     if (config.languageMode !== 'nl-en') {
-      parts.push((await attempt(segmentPath, config.languageMode)).text);
-      continue;
+      return (await attempt(segmentPath, config.languageMode)).text;
     }
 
     const first = await attempt(segmentPath);
     const decision = decideLanguage(first);
     if (decision.action === 'accept') {
-      parts.push(first.text);
-      continue;
+      return first.text;
     }
 
     const detected = first.language ?? 'text-check';
     if (decision.action === 'retry') {
       logger.info('Third language detected; transcribing again', { detected, forced: decision.language });
-      parts.push((await attempt(segmentPath, decision.language)).text);
-      continue;
+      return (await attempt(segmentPath, decision.language)).text;
     }
 
     logger.info('Third language detected; transcribing as Dutch and as English', { detected });
@@ -161,8 +161,35 @@ export async function transcribeSegments(
       dutchConfidence: dutch.confidence,
       englishConfidence: english.confidence,
     });
-    parts.push(chosen === 'nl' ? dutch.text : english.text);
-  }
+    return chosen === 'nl' ? dutch.text : english.text;
+  };
+}
 
+/**
+ * Transcribe a recording's segments in order. `early` holds segments that
+ * were already started while the user was still recording; those are awaited
+ * instead of redone (and redone if that early attempt failed).
+ */
+export async function transcribeSegments(
+  segmentPaths: string[],
+  config: AppConfig,
+  target: TranscriptionTarget,
+  logger: Logger,
+  early?: ReadonlyMap<string, Promise<string>>,
+): Promise<string> {
+  const transcribe = createSegmentTranscriber(config, target, logger);
+  const parts: string[] = [];
+  for (const segmentPath of segmentPaths) {
+    const started = early?.get(segmentPath);
+    if (started) {
+      try {
+        parts.push(await started);
+        continue;
+      } catch (error) {
+        logger.info('Early segment transcription failed; retrying now', { path: segmentPath, error: String(error) });
+      }
+    }
+    parts.push(await transcribe(segmentPath));
+  }
   return joinTranscriptParts(parts);
 }

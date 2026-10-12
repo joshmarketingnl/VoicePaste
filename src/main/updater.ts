@@ -72,6 +72,10 @@ export function startUpdater(updaterHooks: UpdaterHooks): void {
       setStatus({ kind: 'available', version: info.version });
     }
   });
+  // One line per check (every 6 h) so the log shows the updater is alive.
+  autoUpdater.on('update-not-available', (info: UpdateInfo) => {
+    logger.info('No update available', { latest: info.version, running: app.getVersion() });
+  });
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
     logger.info('Update downloaded; installing at the next quiet moment', { version: info.version });
     setStatus({ kind: 'ready', version: info.version });
