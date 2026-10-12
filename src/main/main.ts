@@ -39,6 +39,7 @@ import {
 } from '../shared/transcriptionErrors';
 import { getUpdateStatus, installUpdateNow, openDownloadPage, startUpdater, UpdateStatus } from './updater';
 import { createTrayIcon } from './trayIcon';
+import { e2eEvent, isE2E, prepareE2eProcess, startE2eControl } from './e2e';
 import {
   getCursorIndicatorAlwaysOnTopLevel,
   isCursorIndicatorSupportedPlatform,
@@ -196,7 +197,7 @@ function getCursorIndicatorIndexPath(): string {
 }
 
 function isCursorIndicatorSupported(): boolean {
-  return isCursorIndicatorSupportedPlatform(process.platform);
+  return !isE2E && isCursorIndicatorSupportedPlatform(process.platform);
 }
 
 function normalizeHotkey(input: string): string {
@@ -323,11 +324,21 @@ function validateSettingsPayload(payload: SettingsPayload): string | null {
 
 type StateAction = { id: 'retry-failed' | 'open-mic-settings'; label: string };
 
+/** Send to the control window, unless it is gone (during quit, engine and
+ *  timer callbacks can still fire: "Object has been destroyed"). */
+function sendToMainWindow(channel: string, payload?: unknown) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send(channel, payload);
+}
+
 function sendStateUpdate(state: AppState, message?: string, preview?: string, action?: StateAction) {
+  e2eEvent({ state, message, action: action?.id });
   if (!mainWindow) {
     return;
   }
-  mainWindow.webContents.send('stateUpdate', { state, message, preview, action });
+  sendToMainWindow('stateUpdate', { state, message, preview, action });
 
   if (mainWindow.isVisible()) {
     return;
@@ -363,7 +374,7 @@ function getCursorIndicatorWindowWidth(): number {
 }
 
 function sendCursorIndicatorUpdate(state: CursorIndicatorState) {
-  if (!cursorIndicatorWindow || !cursorIndicatorReady) {
+  if (!cursorIndicatorWindow || cursorIndicatorWindow.isDestroyed() || !cursorIndicatorReady) {
     return;
   }
   cursorIndicatorWindow.webContents.send('cursorIndicatorUpdate', {
@@ -390,7 +401,7 @@ function markCursorIndicatorRendererReady(reason: string) {
 }
 
 function notifyBackgroundStatus(title: string, body: string, mode: 'info' | 'error') {
-  if (mainWindow?.isVisible()) {
+  if (mainWindow?.isVisible() || isE2E) {
     return;
   }
 
@@ -618,10 +629,11 @@ function deliverTranscript(transcript: string): boolean {
     return false;
   }
   lastTranscript = transcript;
+  e2eEvent({ transcript });
   const preview = buildPreview(transcript);
   stateMachine.transition('ready', 'Transcript ready');
   sendStateUpdate('ready', 'Ready to paste', preview);
-  mainWindow?.webContents.send('transcriptReady', { text: transcript, preview });
+  sendToMainWindow('transcriptReady', { text: transcript, preview });
   return true;
 }
 
@@ -1236,7 +1248,7 @@ function requestOpenSettingsPanel(reason: string) {
 
   showIndicator(reason);
   const sendOpenSettings = () => {
-    mainWindow?.webContents.send('openSettingsPanel');
+    sendToMainWindow('openSettingsPanel');
     logger.info('Settings panel requested', { reason });
   };
 
@@ -1256,7 +1268,7 @@ function requestStartRecordingFromShell(reason: string) {
     return;
   }
 
-  mainWindow.webContents.send('commandStart');
+  sendToMainWindow('commandStart');
   logger.info('Recording start requested', { reason, state: stateMachine.getState() });
 }
 
@@ -1352,7 +1364,7 @@ function showUpdatePanel() {
     return;
   }
   handleShowControlWindow('update-available');
-  mainWindow.webContents.send('showUpdate', { version: update.version, downloadUrl: update.downloadUrl });
+  sendToMainWindow('showUpdate', { version: update.version, downloadUrl: update.downloadUrl });
 }
 
 function updateTrayMenu() {
@@ -1554,7 +1566,7 @@ function handleToggleRecording() {
     logger.info('Recording toggle ignored while transcribing');
     return;
   }
-  mainWindow?.webContents.send('commandStart');
+  sendToMainWindow('commandStart');
 }
 
 function handleCancelRecording() {
@@ -1563,7 +1575,7 @@ function handleCancelRecording() {
     logger.info('Cancel ignored; not recording');
     return;
   }
-  mainWindow?.webContents.send('commandCancel');
+  sendToMainWindow('commandCancel');
 }
 
 function handleStopAndTranscribe(source: StopAndTranscribeSource): boolean {
@@ -1572,7 +1584,7 @@ function handleStopAndTranscribe(source: StopAndTranscribeSource): boolean {
     logger.info('Stop+transcribe ignored; not recording', { source, state });
     return false;
   }
-  mainWindow?.webContents.send('commandStop');
+  sendToMainWindow('commandStop');
   logger.info('Stop+transcribe requested', { source });
   return true;
 }
@@ -1588,7 +1600,7 @@ function interruptTranscriptionAndStartRecording(reason: string): boolean {
   clearQueuedPaste('transcription-interrupted-by-ui');
   stateMachine.transition('recording', 'Transcription interrupted by record button');
   sendStateUpdate('recording', 'Recording...');
-  mainWindow?.webContents.send('commandStart');
+  sendToMainWindow('commandStart');
   logger.info('Transcription interrupted; starting new recording', {
     reason,
     transcriptionJobId: activeTranscriptionJobId,
@@ -1607,7 +1619,7 @@ function handleRecordButtonActionFromUi() {
     interruptTranscriptionAndStartRecording('ui-record-button');
     return;
   }
-  mainWindow?.webContents.send('commandStart');
+  sendToMainWindow('commandStart');
   logger.info('Record button requested start', { state });
 }
 
@@ -1641,6 +1653,11 @@ function handlePasteHotkey() {
 async function handlePaste() {
   if (!lastTranscript) {
     reportRecoverableError('paste-requested-without-transcript', 'Nothing to paste yet.');
+    return;
+  }
+  if (isE2E) {
+    // Never type into whatever window happens to be in front during a test.
+    e2eEvent({ paste: lastTranscript });
     return;
   }
 
@@ -2072,8 +2089,18 @@ function setupIpcHandlers() {
       try {
         target = await resolveTranscriptionTarget();
       } catch (error) {
-        const message = engineStartupMessage(error);
-        reportRecoverableError('engine-not-ready', message, { error: String(error) });
+        const kept = keepFailedRecording(sessionId, segmentPaths);
+        if (kept) {
+          lastFailedRecording = kept;
+        }
+        reportRecoverableError(
+          'engine-not-ready',
+          engineStartupMessage(error),
+          { error: String(error), kept: Boolean(kept) },
+          kept ? { id: 'retry-failed', label: retryLabel(config.uiLanguage) } : undefined,
+        );
+        updateTrayMenu();
+        forgetEarlyTranscripts(segmentPaths);
         cleanupSession(sessionId, segmentPaths);
         return;
       }
@@ -2353,7 +2380,8 @@ async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
     if (!baseUrl) {
       throw new Error(engineManager.getLastError() ?? 'Local engine not ready');
     }
-    return { baseUrl, apiKey: '' };
+    const manager = engineManager;
+    return { baseUrl, apiKey: '', recover: (failedBaseUrl) => manager.recover(failedBaseUrl) };
   }
 
   if (config.engine === 'custom') {
@@ -2386,7 +2414,7 @@ function permissionState(): { mic: MicAccess; accessibility: boolean } {
 function showWelcome(reason: OnboardingReason) {
   if (!mainWindow) return;
   handleShowControlWindow(`welcome-${reason}`);
-  mainWindow.webContents.send('showWelcome', {
+  sendToMainWindow('showWelcome', {
     reason,
     platform: process.platform,
     ...permissionState(),
@@ -2429,10 +2457,10 @@ function createEngineManager(): EngineManager {
     idleSleepMs: Math.max(0, config.engineIdleSleepMinutes ?? 0) * 60_000,
     onStatusChange: (status: EngineStatus) => {
       logger.info('Engine status', { status });
-      mainWindow?.webContents.send('engineStatus', { status });
+      sendToMainWindow('engineStatus', { status });
     },
     onProgress: (p) => {
-      mainWindow?.webContents.send('engineProgress', p);
+      sendToMainWindow('engineProgress', p);
       showEngineDownloadProgressWhileWaiting(p);
     },
   });
@@ -2482,7 +2510,9 @@ function initializeApp() {
   indicatorHiddenByUser = launchHidden;
   hasShownOnLaunch = false;
 
-  if (process.platform === 'darwin') {
+  if (isE2E) {
+    // Test run: no autostart entry, no Dock or taskbar identity changes.
+  } else if (process.platform === 'darwin') {
     app.setLoginItemSettings({ openAtLogin: true });
     if (app.isPackaged && app.dock) {
       app.dock.hide();
@@ -2525,9 +2555,13 @@ function initializeApp() {
     screen.on('display-added', handleCursorIndicatorDisplayAdded);
     screen.on('display-removed', handleCursorIndicatorDisplayRemoved);
   }
-  setupTray();
+  if (!isE2E) {
+    setupTray();
+  }
   setupIpcHandlers();
-  registerHotkeysOrFail();
+  if (!isE2E) {
+    registerHotkeysOrFail();
+  }
 
   sendStateUpdate('idle', 'Idle');
   updateIndicatorVisibility('idle');
@@ -2536,24 +2570,53 @@ function initializeApp() {
 
   // Have the Windows paste helper ready before the first paste (cold start
   // after boot otherwise costs seconds on that first paste).
-  setTimeout(() => warmPasteHelper(), 5_000);
+  if (!isE2E) {
+    setTimeout(() => warmPasteHelper(), 5_000);
+  }
   setupPowerHandling();
   setTimeout(() => checkOnboarding(), 1_500);
+  startE2eControl(
+    {
+      state: () => ({
+        state: stateMachine.getState(),
+        lastTranscript,
+        engine: engineManager?.getStatus() ?? null,
+        windowLoaded: Boolean(mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()),
+      }),
+      record: () => handleToggleRecording(),
+      stop: () => handleStopAndTranscribe('toggle'),
+      'stop-paste': () => handlePasteHotkey(),
+      cancel: () => handleCancelRecording(),
+      retry: () => runStateAction('retry-failed'),
+      'drop-mic': () => mainWindow?.webContents.executeJavaScript('window.__voicepasteE2e?.dropMic()'),
+      'kill-engine': () => {
+        const pid = engineManager?.getPid();
+        if (pid) process.kill(pid);
+        return pid ?? null;
+      },
+      suspend: () => powerMonitor.emit('suspend'),
+      quit: () => setTimeout(() => performQuit(), 50),
+    },
+    (message, meta) => logger.info(message, meta),
+  );
 
-  startUpdater({
-    logger,
-    isQuiet: (quietForMs) => {
-      const state = stateMachine.getState();
-      if (state === 'recording' || state === 'transcribing' || mainWindow?.isVisible()) {
-        return false;
-      }
-      return Date.now() - lastActivityAt >= quietForMs;
-    },
-    onStatusChange: handleUpdateStatusChange,
-    beforeInstall: () => {
-      isQuitting = true;
-    },
-  });
+  // No update checks or installs during a test.
+  if (!isE2E) {
+    startUpdater({
+      logger,
+      isQuiet: (quietForMs) => {
+        const state = stateMachine.getState();
+        if (state === 'recording' || state === 'transcribing' || mainWindow?.isVisible()) {
+          return false;
+        }
+        return Date.now() - lastActivityAt >= quietForMs;
+      },
+      onStatusChange: handleUpdateStatusChange,
+      beforeInstall: () => {
+        isQuitting = true;
+      },
+    });
+  }
 
   // Warm up the embedded engine in the background so the first dictation is
   // instant. Failures are non-fatal here — they surface on the first attempt.
@@ -2588,11 +2651,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
-// Only one VoicePaste may run at a time: a second instance (e.g. an old build
-// launched via a stale shortcut or startup entry) would fight over the global
-// hotkeys and rewrite the autostart registry key to its own — outdated — exe.
-// The second instance exits before it touches any of that; the running
-// instance responds by showing its control window.
+prepareE2eProcess();
+
 // Crash dumps stay on this computer (privacy promise: nothing goes to the
 // internet). They are counted at the next start and in the diagnostics.
 try {
@@ -2641,7 +2701,7 @@ function setupPowerHandling() {
     logger.info('System going to sleep', { state: stateMachine.getState() });
     // Finish a running recording instead of leaving it hanging over the sleep.
     if (stateMachine.getState() === 'recording') {
-      mainWindow?.webContents.send('commandStop');
+      sendToMainWindow('commandStop');
     }
   });
   powerMonitor.on('resume', () => {
@@ -2709,6 +2769,11 @@ function bootLog(message: string, meta?: Record<string, unknown>) {
 }
 
 bootLog('Process started', { version: app.getVersion(), args: process.argv.slice(1) });
+// Only one VoicePaste may run at a time: a second instance (e.g. an old build
+// launched via a stale shortcut or startup entry) would fight over the global
+// hotkeys and rewrite the autostart registry key to its own — outdated — exe.
+// The second instance exits before it touches any of that; the running
+// instance responds by showing its control window.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   bootLog('Another instance holds the lock; exiting');

@@ -62,6 +62,29 @@ export class EngineManager {
     return this.lastError;
   }
 
+  /** Process id of the running whisper-server (diagnostics and the E2E crash test). */
+  getPid(): number | null {
+    return this.proc?.pid ?? null;
+  }
+
+  /**
+   * A request died together with the engine (whisper.cpp crashes on some
+   * input, see transcription.ts). Wait until that process is really gone and
+   * the restarted one is up, and return its address: it has a new port.
+   */
+  async recover(failedBaseUrl: string): Promise<string> {
+    const deadline = Date.now() + 3_000;
+    while (this.getBaseUrl() === failedBaseUrl && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await this.ensureReady();
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      throw new Error(this.lastError ?? 'Local engine not ready');
+    }
+    return baseUrl;
+  }
+
   /** OpenAI-compatible base URL of the running engine, or null if not ready. */
   getBaseUrl(): string | null {
     return this.port ? `http://127.0.0.1:${this.port}/v1` : null;
@@ -257,7 +280,8 @@ export class EngineManager {
     this.logger.info('Restarting engine', { attempt: this.restarts });
     setTimeout(() => {
       if (this.disposed || !this.mayRestart()) return;
-      this.start().catch((err) => this.logger.error('Engine restart failed', { error: String(err) }));
+      // Through ensureReady: a recording may already have started it again.
+      this.ensureReady().catch((err) => this.logger.error('Engine restart failed', { error: String(err) }));
     }, RESTART_BACKOFF_MS);
   }
 

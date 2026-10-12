@@ -26,6 +26,19 @@ export interface TranscriptionTarget {
   /** OpenAI-compatible base URL (embedded engine port, OpenAI, or custom). */
   baseUrl: string;
   apiKey: string;
+  /** Embedded engine only: wait for it after a crash, resolve its new base URL. */
+  recover?: (failedBaseUrl: string) => Promise<string>;
+}
+
+const CLOUD_REQUEST_TIMEOUT_MS = 120_000;
+
+/** No HTTP answer at all: the connection was refused or dropped. */
+function isConnectionLost(error: unknown): boolean {
+  if (httpStatus(error) !== undefined) {
+    return false;
+  }
+  const text = `${(error as { name?: string })?.name ?? ''} ${String(error)}`;
+  return /APIConnectionError|Connection error|ECONNRESET|ECONNREFUSED|socket hang up/i.test(text);
 }
 
 /**
@@ -112,14 +125,27 @@ export function createSegmentTranscriber(
   target: TranscriptionTarget,
   logger: Logger,
 ): (segmentPath: string) => Promise<string> {
-  const client = new OpenAI({
-    apiKey: target.apiKey || LOCAL_TRANSCRIPTION_API_KEY,
-    baseURL: target.baseUrl,
-  });
+  let baseUrl = target.baseUrl;
+  const makeClient = () =>
+    new OpenAI({
+      apiKey: target.apiKey || LOCAL_TRANSCRIPTION_API_KEY,
+      baseURL: baseUrl,
+      // Retries are ours (withRetries, a fresh upload each time). The SDK
+      // (4.x) resends a multipart body it already sent, so its own retry of a
+      // dropped upload hung until its 10-minute timeout on "Transcribing...".
+      maxRetries: 0,
+      // A stalled cloud request gives up; the recording is kept for a retry.
+      // The local engine may need minutes for a long segment on a CPU.
+      ...(target.recover ? {} : { timeout: CLOUD_REQUEST_TIMEOUT_MS }),
+    });
+  let client = makeClient();
   let flavor = responseFlavorFor(config.engine, config.model);
+  // A dropped connection to the embedded engine means it crashed (handled
+  // below); to OpenAI or a custom server it is worth asking again.
+  const retryable = (error: unknown) => isRetryable(error) || (!target.recover && isConnectionLost(error));
 
   const attempt = async (segmentPath: string, language?: string): Promise<TranscriptionAttempt> => {
-    const run = () => withRetries(() => requestAttempt(client, segmentPath, config.model, language, flavor), 2, 500, isRetryable);
+    const run = () => withRetries(() => requestAttempt(client, segmentPath, config.model, language, flavor), 2, 500, retryable);
     try {
       return await run();
     } catch (error) {
@@ -128,6 +154,17 @@ export function createSegmentTranscriber(
         logger.info('Endpoint rejected rich response format; using plain json', { flavor, error: String(error) });
         flavor = 'json';
         return run();
+      }
+      // whisper.cpp's server crashes on verbose_json when its VAD finds no
+      // speech at all: silence, background noise, a muted or blocked
+      // microphone (ggml-org/whisper.cpp#3595; still in b5454, Oct 2026).
+      // Plain json doesn't crash and returns "" for that audio, which the
+      // app then reports as "nothing heard" instead of "no connection".
+      if (flavor === 'verbose' && target.recover && isConnectionLost(error)) {
+        logger.info('Engine dropped the request; asking again in plain json', { error: String(error) });
+        baseUrl = await target.recover(baseUrl);
+        client = makeClient();
+        return requestAttempt(client, segmentPath, config.model, language, 'json');
       }
       throw error;
     }

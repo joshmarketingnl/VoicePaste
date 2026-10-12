@@ -14,6 +14,8 @@ import type { Logger } from '../src/shared/logger';
 interface Reply {
   status?: number;
   body: Record<string, unknown>;
+  /** Hang up without answering, like whisper-server crashing mid-request. */
+  drop?: boolean;
 }
 let requests: Array<Record<string, string>> = [];
 let replies: Reply[] = [];
@@ -35,6 +37,10 @@ beforeAll(async () => {
     req.on('end', () => {
       requests.push(formFields(Buffer.concat(chunks).toString('latin1')));
       const reply = replies.shift() ?? { status: 500, body: { error: 'no scripted reply' } };
+      if (reply.drop) {
+        req.socket.destroy();
+        return;
+      }
       res.writeHead(reply.status ?? 200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(reply.body));
     });
@@ -43,7 +49,10 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
 });
 
-afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
+afterAll(() => {
+  server.closeAllConnections();
+  return new Promise<void>((resolve) => server.close(() => resolve()));
+});
 
 beforeEach(() => {
   requests = [];
@@ -174,4 +183,38 @@ describe('transcribeSegments with segments started during recording', () => {
     expect(text).toBe('Eerste deel. Tweede deel.');
     expect(requests).toHaveLength(2);
   });
+});
+
+describe('embedded engine crashing on audio without speech', () => {
+  it('waits for the restarted engine and asks again in plain json', async () => {
+    // whisper.cpp crashes on verbose_json when VAD finds no speech; plain json returns "".
+    replies = [{ drop: true, body: {} }, { body: { text: '' } }];
+    let recovered = 0;
+    const text = await transcribeSegments([segment], config({ engine: 'local', languageMode: 'nl-en' }), {
+      baseUrl,
+      apiKey: '',
+      recover: async (failed) => {
+        recovered += 1;
+        expect(failed).toBe(baseUrl);
+        return baseUrl; // the restarted engine (normally on a new port)
+      },
+    }, logger);
+    expect(text).toBe('');
+    expect(recovered).toBe(1);
+    expect(requests).toHaveLength(2);
+    expect(requests[0].response_format).toBe('verbose_json');
+    expect(requests[1].response_format ?? 'json').toBe('json');
+  });
+
+  it('does not hide a real outage behind the fallback', async () => {
+    // A custom endpoint has no recover hook: the error surfaces (and the app
+    // keeps the recording for a retry) instead of quietly becoming "".
+    replies = [{ drop: true, body: {} }, { drop: true, body: {} }, { drop: true, body: {} }];
+    await expect(
+      transcribeSegments([segment], config({ engine: 'custom', provider: baseUrl }), { baseUrl, apiKey: 'x' }, logger),
+    ).rejects.toThrow(/Connection error/);
+    // Three fresh uploads (the app's retries), each complete: no hang, no fallback.
+    expect(requests).toHaveLength(3);
+    expect(new Set(requests.map((r) => r.response_format)).size).toBe(1);
+  }, 20_000);
 });

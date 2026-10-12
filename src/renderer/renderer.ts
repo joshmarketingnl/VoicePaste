@@ -1001,6 +1001,12 @@ async function openMicrophone(): Promise<MediaStream> {
   }
 }
 
+// Used only by the end-to-end test (scripts/e2e-recording.mjs) to simulate an
+// unplugged microphone: a real unplug fires the same 'ended' event.
+(window as unknown as { __voicepasteE2e: object }).__voicepasteE2e = {
+  dropMic: () => mediaStream?.getAudioTracks().forEach((track) => track.dispatchEvent(new Event('ended'))),
+};
+
 async function startRecording() {
   if (mediaRecorder) {
     return;
