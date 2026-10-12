@@ -771,3 +771,31 @@ body {
   align-self: flex-start;
   margin-top: 2px;
 }
+
+/* Welcome / permissions panel. */
+.welcome-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-check {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.welcome-check-state {
+  font-weight: 700;
+  color: rgba(244, 104, 111, 0.95);
+}
+
+.welcome-check-state[data-on='true'] {
+  color: rgba(99, 195, 139, 0.95);
+}

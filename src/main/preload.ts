@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+interface WelcomeInfo {
+  reason: string;
+  platform: string;
+  mic: string;
+  accessibility: boolean;
+  hotkeys: { record: string; paste: string };
+}
+
 contextBridge.exposeInMainWorld('voicepaste', {
   beginRecordingSession: () => ipcRenderer.invoke('beginRecordingSession'),
   saveSegment: (payload: {
@@ -73,6 +81,10 @@ contextBridge.exposeInMainWorld('voicepaste', {
     }>,
   openLogsFolder: () => ipcRenderer.invoke('openLogsFolder') as Promise<boolean>,
   copyDiagnostics: () => ipcRenderer.invoke('copyDiagnostics') as Promise<boolean>,
+  onShowWelcome: (callback: (info: WelcomeInfo) => void) => ipcRenderer.on('showWelcome', (_event, info) => callback(info)),
+  getPermissionState: () => ipcRenderer.invoke('getPermissionState') as Promise<{ mic: string; accessibility: boolean }>,
+  requestMicAccess: () => ipcRenderer.invoke('requestMicAccess') as Promise<boolean>,
+  openPermissionSettings: (which: 'microphone' | 'accessibility') => ipcRenderer.send('openPermissionSettings', which),
   openExternalUrl: (url: string) => ipcRenderer.invoke('openExternalUrl', url) as Promise<boolean>,
   setSettingsExpanded: (isExpanded: boolean) => ipcRenderer.send('setSettingsExpanded', isExpanded),
   setSettingsDeveloperMode: (isDeveloperMode: boolean) =>

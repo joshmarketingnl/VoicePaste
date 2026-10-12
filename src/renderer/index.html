@@ -82,6 +82,32 @@
           <span id="copyActionLabel" class="action-label">Copy</span>
         </button>
       </div>
+      <div id="welcomePanel" class="settings-panel update-panel" hidden>
+        <div class="settings-header">
+          <div id="welcomeTitle" class="settings-title">Welcome</div>
+        </div>
+        <p id="welcomeIntro" class="update-intro"></p>
+        <ol id="welcomeSteps" class="update-steps">
+          <li id="welcomeStep1"></li>
+          <li id="welcomeStep2"></li>
+          <li id="welcomeStep3"></li>
+        </ol>
+        <div id="welcomeChecks" class="welcome-checks" hidden>
+          <div class="welcome-check">
+            <span id="checkMicLabel" class="welcome-check-label">Microphone</span>
+            <span id="checkMicState" class="welcome-check-state"></span>
+            <button id="checkMicButton" class="settings-secondary-button" type="button"></button>
+          </div>
+          <div class="welcome-check">
+            <span id="checkPasteLabel" class="welcome-check-label">Paste</span>
+            <span id="checkPasteState" class="welcome-check-state"></span>
+            <button id="checkPasteButton" class="settings-secondary-button" type="button"></button>
+          </div>
+        </div>
+        <div class="update-actions">
+          <button id="welcomeDoneButton" class="settings-primary-button" type="button">OK</button>
+        </div>
+      </div>
       <div id="updatePanel" class="settings-panel update-panel" hidden>
         <div class="settings-header">
           <div id="updateTitle" class="settings-title">New version</div>

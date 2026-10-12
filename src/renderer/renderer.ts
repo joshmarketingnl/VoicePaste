@@ -68,7 +68,22 @@ const languageModeOptionNlEn = document.getElementById('languageModeOptionNlEn')
 const languageModeOptionNl = document.getElementById('languageModeOptionNl') as HTMLOptionElement;
 const languageModeOptionEn = document.getElementById('languageModeOptionEn') as HTMLOptionElement;
 const languageModeOptionEs = document.getElementById('languageModeOptionEs') as HTMLOptionElement;
+type WelcomeInfo = Parameters<Parameters<Window['voicepaste']['onShowWelcome']>[0]>[0];
+
 const updatePanel = document.getElementById('updatePanel') as HTMLElement;
+const welcomePanel = document.getElementById('welcomePanel') as HTMLElement;
+const welcomeTitle = document.getElementById('welcomeTitle') as HTMLElement;
+const welcomeIntro = document.getElementById('welcomeIntro') as HTMLElement;
+const welcomeSteps = document.getElementById('welcomeSteps') as HTMLElement;
+const welcomeStepItems = [1, 2, 3].map((n) => document.getElementById(`welcomeStep${n}`) as HTMLElement);
+const welcomeChecks = document.getElementById('welcomeChecks') as HTMLElement;
+const checkMicLabel = document.getElementById('checkMicLabel') as HTMLElement;
+const checkMicState = document.getElementById('checkMicState') as HTMLElement;
+const checkMicButton = document.getElementById('checkMicButton') as HTMLButtonElement;
+const checkPasteLabel = document.getElementById('checkPasteLabel') as HTMLElement;
+const checkPasteState = document.getElementById('checkPasteState') as HTMLElement;
+const checkPasteButton = document.getElementById('checkPasteButton') as HTMLButtonElement;
+const welcomeDoneButton = document.getElementById('welcomeDoneButton') as HTMLButtonElement;
 const updateTitle = document.getElementById('updateTitle') as HTMLElement;
 const updateIntro = document.getElementById('updateIntro') as HTMLElement;
 const updateSteps = [1, 2, 3].map((n) => document.getElementById(`updateStep${n}`) as HTMLElement);
@@ -245,6 +260,18 @@ const UI_TEXT: Record<
     engineHint: Record<'local' | 'openai' | 'custom', string>;
     languageModeLabel: string;
     languageModeOptions: Record<LanguageMode, string>;
+    welcome: {
+      titles: Record<WelcomeInfo['reason'], string>;
+      intros: Record<WelcomeInfo['reason'], string>;
+      steps: (record: string, paste: string) => [string, string, string];
+      mic: string;
+      paste: string;
+      on: string;
+      off: string;
+      ask: string;
+      open: string;
+      done: string;
+    };
     update: {
       title: (version: string) => string;
       intro: string;
@@ -308,6 +335,33 @@ const UI_TEXT: Record<
       local: 'Runs on your device — nothing to start, no API key, works offline.',
       openai: 'Uses the OpenAI cloud API (an API key is required).',
       custom: 'Send audio to your own OpenAI-compatible endpoint.',
+    },
+    welcome: {
+      titles: {
+        'first-run': 'Welcome to VoicePaste',
+        'mic-missing': 'The microphone is blocked',
+        'accessibility-missing': 'Allow VoicePaste to paste',
+        'after-update': 'After the update: allow pasting again',
+      },
+      intros: {
+        'first-run': 'Speech becomes text, entirely on this computer. VoicePaste waits in the tray next to the clock.',
+        'mic-missing': 'macOS is not letting VoicePaste hear you. Turn it on below; it only listens while you record.',
+        'accessibility-missing': 'To paste the text where your cursor is, macOS needs your permission once.',
+        'after-update':
+          'macOS forgets this permission with every new version of an app that is not signed by Apple. Turn VoicePaste off and on again below.',
+      },
+      steps: (record, paste) => [
+        `Press ${record} and talk.`,
+        `Press ${paste} to stop. The text is pasted where your cursor is.`,
+        'Nothing is sent to the internet. Change language and keys under Settings.',
+      ],
+      mic: 'Microphone',
+      paste: 'Paste (Accessibility)',
+      on: 'On',
+      off: 'Off',
+      ask: 'Allow',
+      open: 'Open settings',
+      done: 'Got it',
     },
     update: {
       title: (version) => `VoicePaste ${version} is ready`,
@@ -383,6 +437,33 @@ const UI_TEXT: Record<
       local: 'Draait op je apparaat — niets te starten, geen API-sleutel, werkt offline.',
       openai: 'Gebruikt de OpenAI cloud-API (API-sleutel vereist).',
       custom: 'Stuurt audio naar je eigen OpenAI-compatibele endpoint.',
+    },
+    welcome: {
+      titles: {
+        'first-run': 'Welkom bij VoicePaste',
+        'mic-missing': 'De microfoon is geblokkeerd',
+        'accessibility-missing': 'Geef VoicePaste toestemming om te plakken',
+        'after-update': 'Na de update: plakken opnieuw toestaan',
+      },
+      intros: {
+        'first-run': 'Spraak wordt tekst, helemaal op deze computer. VoicePaste wacht in het systeemvak naast de klok.',
+        'mic-missing': 'macOS laat VoicePaste je niet horen. Zet het hieronder aan; hij luistert alleen als je opneemt.',
+        'accessibility-missing': 'Om de tekst te plakken waar je cursor staat, heeft macOS eenmalig je toestemming nodig.',
+        'after-update':
+          'macOS vergeet deze toestemming bij elke nieuwe versie van een app die niet door Apple is ondertekend. Zet VoicePaste hieronder uit en weer aan.',
+      },
+      steps: (record, paste) => [
+        `Druk op ${record} en praat.`,
+        `Druk op ${paste} om te stoppen. De tekst wordt geplakt waar je cursor staat.`,
+        'Er gaat niets naar internet. Taal en toetsen pas je aan onder Instellingen.',
+      ],
+      mic: 'Microfoon',
+      paste: 'Plakken (Toegankelijkheid)',
+      on: 'Aan',
+      off: 'Uit',
+      ask: 'Toestaan',
+      open: 'Instellingen openen',
+      done: 'Begrepen',
     },
     update: {
       title: (version) => `VoicePaste ${version} staat klaar`,
@@ -1359,6 +1440,77 @@ window.voicepaste.onCommandCancel(() => {
 window.voicepaste.onOpenSettingsPanel(() => {
   void openSettingsPanel();
 });
+
+let welcomeInfo: WelcomeInfo | null = null;
+let welcomePoll: number | null = null;
+
+function renderPermissionChecks(state: { mic: string; accessibility: boolean }) {
+  const text = getUiText().welcome;
+  const micOn = state.mic === 'granted';
+  checkMicState.textContent = micOn ? text.on : text.off;
+  checkMicState.dataset.on = String(micOn);
+  checkMicButton.hidden = micOn;
+  checkMicButton.textContent = state.mic === 'not-determined' ? text.ask : text.open;
+  checkMicButton.dataset.action = state.mic === 'not-determined' ? 'ask' : 'open';
+  checkPasteState.textContent = state.accessibility ? text.on : text.off;
+  checkPasteState.dataset.on = String(state.accessibility);
+  checkPasteButton.hidden = state.accessibility;
+  checkPasteButton.textContent = text.open;
+}
+
+function renderWelcome() {
+  if (!welcomeInfo) return;
+  const text = getUiText().welcome;
+  welcomeTitle.textContent = text.titles[welcomeInfo.reason];
+  welcomeIntro.textContent = text.intros[welcomeInfo.reason];
+  const steps = text.steps(formatHotkeyForUi(welcomeInfo.hotkeys.record), formatHotkeyForUi(welcomeInfo.hotkeys.paste));
+  steps.forEach((step, i) => {
+    welcomeStepItems[i].textContent = step;
+  });
+  welcomeSteps.hidden = welcomeInfo.reason !== 'first-run';
+  welcomeChecks.hidden = welcomeInfo.platform !== 'darwin';
+  checkMicLabel.textContent = text.mic;
+  checkPasteLabel.textContent = text.paste;
+  renderPermissionChecks(welcomeInfo);
+  welcomeDoneButton.textContent = text.done;
+}
+
+function closeWelcome() {
+  welcomePanel.hidden = true;
+  if (welcomePoll !== null) window.clearInterval(welcomePoll);
+  welcomePoll = null;
+  window.voicepaste.setUpdatePanelOpen(false);
+}
+
+window.voicepaste.onShowWelcome(async (info) => {
+  welcomeInfo = info;
+  if (isSettingsOpen) closeSettingsPanel();
+  await loadSettingsIfNeeded();
+  renderWelcome();
+  welcomePanel.hidden = false;
+  window.voicepaste.setUpdatePanelOpen(true);
+  if (info.platform === 'darwin' && welcomePoll === null) {
+    // Live: the moment the user flips the switch in System Settings it turns green here.
+    welcomePoll = window.setInterval(async () => {
+      renderPermissionChecks(await window.voicepaste.getPermissionState());
+    }, 2000);
+  }
+});
+
+checkMicButton.addEventListener('click', async () => {
+  if (checkMicButton.dataset.action === 'ask') {
+    await window.voicepaste.requestMicAccess();
+    renderPermissionChecks(await window.voicepaste.getPermissionState());
+  } else {
+    window.voicepaste.openPermissionSettings('microphone');
+  }
+});
+
+checkPasteButton.addEventListener('click', () => {
+  window.voicepaste.openPermissionSettings('accessibility');
+});
+
+welcomeDoneButton.addEventListener('click', () => closeWelcome());
 
 let pendingUpdate: { version: string; downloadUrl: string } | null = null;
 

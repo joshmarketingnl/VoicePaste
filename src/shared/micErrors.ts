@@ -1,7 +1,7 @@
 /**
  * Turns a failed microphone start into something a user can act on.
  *
- * Field data (Apr–Oct 2026): 20 of 31 errors were the bare text
+ * Field data (Apr–Oct 2026): 12 of 31 errors were the bare text
  * "Microphone access failed." — one cause was a USB microphone that Windows
  * had put in an error state after a RAM swap (fixed by replugging), others
  * unknown because the browser's reason was thrown away. The DOMException

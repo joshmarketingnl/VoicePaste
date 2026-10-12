@@ -1,5 +1,13 @@
 export {};
 
+interface WelcomeInfo {
+  reason: 'first-run' | 'mic-missing' | 'accessibility-missing' | 'after-update';
+  platform: string;
+  mic: string;
+  accessibility: boolean;
+  hotkeys: { record: string; paste: string };
+}
+
 interface VoicepasteStateUpdate {
   state: string;
   message?: string;
@@ -64,6 +72,10 @@ interface VoicepasteAPI {
   saveSettings: (payload: VoicepasteSettings) => Promise<SaveVoicepasteSettingsResponse>;
   openLogsFolder: () => Promise<boolean>;
   copyDiagnostics: () => Promise<boolean>;
+  onShowWelcome: (callback: (info: WelcomeInfo) => void) => void;
+  getPermissionState: () => Promise<{ mic: string; accessibility: boolean }>;
+  requestMicAccess: () => Promise<boolean>;
+  openPermissionSettings: (which: 'microphone' | 'accessibility') => void;
   openExternalUrl: (url: string) => Promise<boolean>;
   setSettingsExpanded: (isExpanded: boolean) => void;
   setSettingsDeveloperMode: (isDeveloperMode: boolean) => void;

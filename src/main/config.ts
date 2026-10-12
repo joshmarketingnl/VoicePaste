@@ -8,6 +8,8 @@ export interface LoadedConfig {
   config: AppConfig;
   configPath: string;
   migrationSourcePath?: string;
+  /** No config.json existed: a fresh install (shows the welcome panel). */
+  isFirstRun: boolean;
 }
 
 export function getLegacyConfigCandidates(userDataPath: string): string[] {
@@ -60,11 +62,16 @@ export function loadConfig(): LoadedConfig {
 
   const config = mergeConfig(parsed, process.platform);
 
-  if (!fs.existsSync(configPath)) {
+  const isFirstRun = !fs.existsSync(configPath);
+  if (isFirstRun) {
+    // Speak the user's language from the first screen on.
+    if (app.getLocale().toLowerCase().startsWith('nl')) {
+      config.uiLanguage = 'nl';
+    }
     fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   }
 
-  return { config, configPath, migrationSourcePath };
+  return { config, configPath, migrationSourcePath, isFirstRun };
 }
 
 export function saveConfig(configPath: string, config: AppConfig): void {

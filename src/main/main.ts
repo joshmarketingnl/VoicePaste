@@ -11,6 +11,7 @@ import {
   clipboard,
   crashReporter,
   powerMonitor,
+  systemPreferences,
   type MenuItemConstructorOptions,
 } from 'electron';
 import fs from 'fs';
@@ -28,6 +29,7 @@ import { EngineManager, EngineStatus } from './engineManager';
 import type { EngineAssetProgress } from './engineAssets';
 import { pasteTranscript, shutdownPasteHelper, warmPasteHelper } from './paste';
 import { classifyMicError, isNoSignal, micHelp } from '../shared/micErrors';
+import { decideOnboarding, MAC_SETTINGS, MicAccess, OnboardingReason } from '../shared/onboarding';
 import {
   classifyTranscriptionError,
   failedRecordingsToPrune,
@@ -84,7 +86,7 @@ interface SettingsResponse {
 
 const CONTROL_WINDOW_WIDTH = 380;
 const CONTROL_WINDOW_HEIGHT = 200;
-const CONTROL_WINDOW_UPDATE_HEIGHT = 380;
+const CONTROL_WINDOW_UPDATE_HEIGHT = 440;
 const CONTROL_WINDOW_SETTINGS_HEIGHT = 720;
 const CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT = 800;
 const CONTROL_WINDOW_MARGIN = 16;
@@ -1665,6 +1667,10 @@ async function handlePaste() {
         ? 'Enable Accessibility and Automation permissions for VoicePaste.'
         : 'Check permissions for simulated paste.';
     const message = `Paste failed. ${permissionHint} ${fallback}`;
+    if (process.platform === 'darwin' && errorText.includes('not allowed to send keystrokes')) {
+      // Explain it properly (and live-check it) instead of only an error line.
+      showWelcome('accessibility-missing');
+    }
     reportRecoverableError('paste-failed', message, { error: String(error) });
   }
 }
@@ -2126,6 +2132,20 @@ function setupIpcHandlers() {
     cleanupSession(sessionId, segmentPaths);
   });
 
+  ipcMain.handle('getPermissionState', () => permissionState());
+
+  ipcMain.handle('requestMicAccess', async () => {
+    if (process.platform !== 'darwin') return false;
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    logger.info('Microphone access requested', { granted });
+    return granted;
+  });
+
+  ipcMain.on('openPermissionSettings', (_event, which: keyof typeof MAC_SETTINGS) => {
+    const url = MAC_SETTINGS[which];
+    if (url) void shell.openExternal(url);
+  });
+
   ipcMain.handle('copyDiagnostics', () => {
     try {
       clipboard.writeText(buildDiagnostics());
@@ -2351,6 +2371,57 @@ async function resolveTranscriptionTarget(): Promise<TranscriptionTarget> {
 // Set when Windows ends the session (shutdown, restart, sign-out) or the
 // system shuts down: from then on nothing is restarted.
 let systemShuttingDown = false;
+let isFirstRun = false;
+
+function permissionState(): { mic: MicAccess; accessibility: boolean } {
+  if (process.platform !== 'darwin') {
+    return { mic: 'unknown', accessibility: true };
+  }
+  return {
+    mic: systemPreferences.getMediaAccessStatus('microphone') as MicAccess,
+    accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+  };
+}
+
+function showWelcome(reason: OnboardingReason) {
+  if (!mainWindow) return;
+  handleShowControlWindow(`welcome-${reason}`);
+  mainWindow.webContents.send('showWelcome', {
+    reason,
+    platform: process.platform,
+    ...permissionState(),
+    hotkeys: { record: config.hotkeys.toggleRecord, paste: config.hotkeys.pasteTranscript },
+  });
+}
+
+/** Welcome a fresh install; on a Mac also catch missing or lost permissions. */
+function checkOnboarding() {
+  const state = permissionState();
+  const file = path.join(app.getPath('userData'), 'onboarding.json');
+  let previous: { version?: string; accessibility?: boolean } = {};
+  try {
+    previous = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    // first check
+  }
+  const reason = decideOnboarding({
+    isFirstRun,
+    platform: process.platform,
+    mic: state.mic,
+    accessibility: state.accessibility,
+    previousAccessibility: typeof previous.accessibility === 'boolean' ? previous.accessibility : null,
+    versionChanged: Boolean(previous.version) && previous.version !== app.getVersion(),
+  });
+  logger.info('Permission check', { ...state, reason, firstRun: isFirstRun });
+  try {
+    fs.writeFileSync(file, JSON.stringify({ version: app.getVersion(), accessibility: state.accessibility }), 'utf8');
+  } catch {
+    // not critical
+  }
+  if (reason && !process.env.VOICEPASTE_E2E) {
+    showWelcome(reason);
+  }
+}
 
 function createEngineManager(): EngineManager {
   return new EngineManager(logger, {
@@ -2407,6 +2478,7 @@ function initializeApp() {
   const loaded = loadConfig();
   config = loaded.config;
   configPath = loaded.configPath;
+  isFirstRun = loaded.isFirstRun;
   indicatorHiddenByUser = launchHidden;
   hasShownOnLaunch = false;
 
@@ -2466,6 +2538,7 @@ function initializeApp() {
   // after boot otherwise costs seconds on that first paste).
   setTimeout(() => warmPasteHelper(), 5_000);
   setupPowerHandling();
+  setTimeout(() => checkOnboarding(), 1_500);
 
   startUpdater({
     logger,

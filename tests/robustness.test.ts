@@ -84,3 +84,27 @@ describe('failedRecordingsToPrune', () => {
     expect(failedRecordingsToPrune(names, now).sort()).toEqual(['2026-09-01T10-00-00-old', '2026-10-08T10-00-00-f'].sort());
   });
 });
+
+import { decideOnboarding } from '../src/shared/onboarding';
+
+describe('decideOnboarding', () => {
+  const base = { isFirstRun: false, platform: 'darwin', mic: 'granted' as const, accessibility: true, previousAccessibility: true, versionChanged: false };
+
+  it('welcomes a first run on every platform', () => {
+    expect(decideOnboarding({ ...base, isFirstRun: true, platform: 'win32' })).toBe('first-run');
+  });
+
+  it('stays quiet when everything is in order, and never nags on Windows', () => {
+    expect(decideOnboarding(base)).toBeNull();
+    expect(decideOnboarding({ ...base, platform: 'win32', accessibility: false, mic: 'denied' })).toBeNull();
+  });
+
+  it('explains a blocked microphone on a Mac', () => {
+    expect(decideOnboarding({ ...base, mic: 'denied' })).toBe('mic-missing');
+  });
+
+  it('recognises paste permission lost by an update', () => {
+    expect(decideOnboarding({ ...base, accessibility: false, versionChanged: true })).toBe('after-update');
+    expect(decideOnboarding({ ...base, accessibility: false, previousAccessibility: null })).toBe('accessibility-missing');
+  });
+});

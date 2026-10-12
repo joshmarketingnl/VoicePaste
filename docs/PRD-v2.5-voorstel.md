@@ -27,7 +27,7 @@ Oplevering: één artifact met vóór/ná en ja/nee per punt (zoals 2.4). Antwoo
 - Opnameduur mediaan 29 s, p90 120 s, max 12 min; 15,5% > 90 s (profiteert van vroeg transcriberen); 6% < 5 s.
 - Transcriptie mediaan 1,16 s, p90 3,0 s.
 - 94% (2201/2262) gestopt met de PLAK-sneltoets tijdens opname (stop+plak in één); kopieerknop 9×.
-- Fouten 31 (1,3%): "Microphone access failed" 20× (19-20 jul, 20 aug = RODE na RAM-wissel, 9 sep) — echte
+- Fouten 31 (1,3%): "Microphone access failed" 12× (19 jul 2×, 20 jul 2×, 20 aug 7× = RODE na RAM-wissel, 9 sep 1×) — echte
   oorzaak gaat verloren; "Nothing to paste yet" 9× (o.a. na lege transcriptie of meteen na opstarten);
   "Transcription failed" 7× (4× Connection error = juli oude beta, 2× 401 verkeerde API-sleutel, 1× 400
   audio 0,06 s te kort); "No audio captured" 3×.
