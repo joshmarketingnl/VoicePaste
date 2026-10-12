@@ -66,16 +66,16 @@ Oplevering: één artifact met vóór/ná en ja/nee per punt (zoals 2.4). Antwoo
 Letterlijk: "je mag alles van VoicePaste wel toevoegen, maar ik zou het dan wel VoicePaste 2.0 noemen…
 talen alleen Nederlands en Engels… alles doorvoeren naar GitHub. Frank gebruikt Windows en heeft een eigen OpenAI key."
 Plan (status bijhouden met [x]):
-- [ ] Talen: alleen NL+EN (LanguageMode 'es' weg uit types/config/UI/docs; oude 'es' → 'nl-en').
-- [ ] R1 lokaal model: `localModel: 'auto'|'accurate'|'fast'`; auto = groot op Mac of NVIDIA, klein (ggml-small-q5_1) op pc zonder NVIDIA. Instelling.
-- [ ] R2 optie: opnemen-toets stopt+plakt tijdens opname (`recordKeyPastes`, standaard uit).
-- [ ] R3 woordenlijst (`vocabulary`) als whisper `prompt`; eerst meten (nltech-clip + stilte).
-- [ ] R4 geschiedenis laatste 10 (`keepHistory`, standaard aan, userData/history.json, tray-submenu kopieert).
-- [ ] R6 offline-reserve (`offlineFallback`, standaard aan): openai/custom + geen verbinding → lokaal omzetten als het model er is; model op de achtergrond klaarzetten.
-- [ ] Docs bijwerken (handleiding/manual/README-kop).
-- [ ] Versie 2.5.0 (technisch; updater werkt alleen naar hoger dan 2.3.0), releasetitel "VoicePaste 2.0".
+- [x] Talen: alleen NL+EN (LanguageMode 'es' weg uit types/config/UI/docs; oude 'es' → 'nl-en').
+- [x] R1 lokaal model: `localModel: 'auto'|'accurate'|'fast'`; auto = groot op Mac of NVIDIA, klein (ggml-small-q5_1) op pc zonder NVIDIA. Instelling.
+- [x] R2 optie: opnemen-toets stopt+plakt tijdens opname (`recordKeyPastes`, standaard uit).
+- [x] R3 woordenlijst (`vocabulary`) als whisper `prompt`. Gemeten (langtest-v24/vocab_test.py): vaktermen 9-21% → 4-7% WER; andere woorden geen effect; stilte/ruis leeg.
+- [x] R4 geschiedenis laatste 10 (`keepHistory`, standaard aan, userData/history.json, tray-submenu kopieert).
+- [x] R6 offline-reserve (`offlineFallback`, standaard aan): openai/custom + geen verbinding → lokaal omzetten als het model er is; model op de achtergrond klaarzetten.
+- [x] Docs bijwerken (handleiding/manual/README-kop).
+- [x] Versie 2.5.0 (technisch; updater werkt alleen naar hoger dan 2.3.0), releasetitel "VoicePaste 2.0".
 - [ ] Merge naar main, tag v2.5.0, CI (build-macos levert assets; e2e-smoke), release met alle assets + VoicePaste-Setup.exe-kopie.
-- [ ] Releasebericht voor Frank (Windows, eigen OpenAI-sleutel), zonder AI-taal.
+- [x] Releasebericht voor Frank (Windows, eigen OpenAI-sleutel), zonder AI-taal: `context/release-v2.0/bericht-frank.txt`; releasenotes `context/release-v2.0/release-notes.md`.
 - [ ] Reviewpagina bijwerken (uitgebracht, vóór/ná) + melden aan orchestratie-agent.
 Niet: R5 (openbare reactie whisper.cpp, geen expliciete ja) en Apple-ondertekening ($99/jr, Josh moet zelf
 aanmelden + expliciet ja op kosten) → open punten.
