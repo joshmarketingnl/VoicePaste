@@ -74,9 +74,9 @@ Plan (status bijhouden met [x]):
 - [x] R6 offline-reserve (`offlineFallback`, standaard aan): openai/custom + geen verbinding → lokaal omzetten als het model er is; model op de achtergrond klaarzetten.
 - [x] Docs bijwerken (handleiding/manual/README-kop).
 - [x] Versie 2.5.0 (technisch; updater werkt alleen naar hoger dan 2.3.0), releasetitel "VoicePaste 2.0".
-- [ ] Merge naar main, tag v2.5.0, CI (build-macos levert assets; e2e-smoke), release met alle assets + VoicePaste-Setup.exe-kopie.
+- [x] Merge naar main (ff 33291fc), tag v2.5.0, CI groen (e2e Win 18/18 + Mac 18/18, build-macos, mac-update-check; verpakte win-zip lokaal 13/13), release https://github.com/joshmarketingnl/VoicePaste/releases/tag/v2.5.0 = latest, 8 assets, latest.yml sha512 klopt, 12-10 18:25.
 - [x] Releasebericht voor Frank (Windows, eigen OpenAI-sleutel), zonder AI-taal: `context/release-v2.0/bericht-frank.txt`; releasenotes `context/release-v2.0/release-notes.md`.
-- [ ] Reviewpagina bijwerken (uitgebracht, vóór/ná) + melden aan orchestratie-agent.
+- [x] Reviewpagina bijgewerkt (https://claude.ai/artifact/6rN5q3YjXHSG9kxAfc1f9b, v3: uitgebracht, vóór/ná, bericht Frank, open keuzes r-upstream + apple-ondertekening) + gemeld.
 Niet: R5 (openbare reactie whisper.cpp, geen expliciete ja) en Apple-ondertekening ($99/jr, Josh moet zelf
 aanmelden + expliciet ja op kosten) → open punten.
 
