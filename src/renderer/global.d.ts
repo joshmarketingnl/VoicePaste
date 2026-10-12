@@ -64,6 +64,8 @@ interface VoicepasteAPI {
   requestRecordButtonAction: () => void;
   copyTranscriptToClipboard: () => Promise<boolean>;
   onOpenSettingsPanel: (callback: () => void) => void;
+  onShowUpdate: (callback: (info: { version: string; downloadUrl: string }) => void) => void;
+  setUpdatePanelOpen: (isOpen: boolean) => void;
   onStateUpdate: (callback: (data: VoicepasteStateUpdate) => void) => void;
   onTranscriptReady: (callback: (data: { text: string; preview: string }) => void) => void;
   onError: (callback: (data: { message: string }) => void) => void;

@@ -735,3 +735,34 @@ body {
     transform: scale(1);
   }
 }
+
+/* Update panel (macOS: a new version the user installs by hand). */
+.update-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-main);
+}
+
+.update-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(245, 239, 215, 0.9);
+}
+
+.update-steps li::marker {
+  color: rgba(251, 191, 36, 0.95);
+  font-weight: 700;
+}
+
+.update-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

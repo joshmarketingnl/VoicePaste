@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld('voicepaste', {
   requestRecordButtonAction: () => ipcRenderer.send('requestRecordButtonAction'),
   copyTranscriptToClipboard: () => ipcRenderer.invoke('copyTranscriptToClipboard') as Promise<boolean>,
   onOpenSettingsPanel: (callback: () => void) => ipcRenderer.on('openSettingsPanel', () => callback()),
+  onShowUpdate: (callback: (info: { version: string; downloadUrl: string }) => void) =>
+    ipcRenderer.on('showUpdate', (_event, info) => callback(info)),
+  setUpdatePanelOpen: (isOpen: boolean) => ipcRenderer.send('setUpdatePanelOpen', isOpen),
   onStateUpdate: (callback: (data: { state: string; message?: string; preview?: string }) => void) =>
     ipcRenderer.on('stateUpdate', (_event, data) => callback(data)),
   onTranscriptReady: (callback: (data: { text: string; preview: string }) => void) =>

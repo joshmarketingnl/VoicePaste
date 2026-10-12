@@ -74,6 +74,7 @@ interface SettingsResponse {
 
 const CONTROL_WINDOW_WIDTH = 380;
 const CONTROL_WINDOW_HEIGHT = 200;
+const CONTROL_WINDOW_UPDATE_HEIGHT = 380;
 const CONTROL_WINDOW_SETTINGS_HEIGHT = 680;
 const CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT = 760;
 const CONTROL_WINDOW_MARGIN = 16;
@@ -152,6 +153,7 @@ let isQuitting = false;
 // Last dictation activity; auto-updates only install after a stretch without any.
 let lastActivityAt = Date.now();
 let settingsWindowExpanded = false;
+let updatePanelOpen = false;
 let settingsWindowDeveloperMode = false;
 
 let cursorFollowInterval: NodeJS.Timeout | null = null;
@@ -519,15 +521,18 @@ function reportRecoverableError(reason: string, message: string, details?: Recor
   sendStateUpdate('error', message);
 }
 
+function targetMainWindowHeight(): number {
+  if (settingsWindowExpanded) {
+    return settingsWindowDeveloperMode ? CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT : CONTROL_WINDOW_SETTINGS_HEIGHT;
+  }
+  return updatePanelOpen ? CONTROL_WINDOW_UPDATE_HEIGHT : CONTROL_WINDOW_HEIGHT;
+}
+
 function getMainWindowSize() {
   if (!mainWindow) {
     return {
       width: CONTROL_WINDOW_WIDTH,
-      height: settingsWindowExpanded
-        ? settingsWindowDeveloperMode
-          ? CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT
-          : CONTROL_WINDOW_SETTINGS_HEIGHT
-        : CONTROL_WINDOW_HEIGHT,
+      height: targetMainWindowHeight(),
     };
   }
   const bounds = mainWindow.getBounds();
@@ -578,11 +583,7 @@ function resizeMainWindowForSettings() {
   if (!mainWindow) {
     return;
   }
-  const nextHeight = !settingsWindowExpanded
-    ? CONTROL_WINDOW_HEIGHT
-    : settingsWindowDeveloperMode
-      ? CONTROL_WINDOW_SETTINGS_DEVELOPER_HEIGHT
-      : CONTROL_WINDOW_SETTINGS_HEIGHT;
+  const nextHeight = targetMainWindowHeight();
   const currentBounds = mainWindow.getBounds();
   if (currentBounds.width === CONTROL_WINDOW_WIDTH && currentBounds.height === nextHeight) {
     return;
@@ -1157,7 +1158,7 @@ function getTrayUpdateItems(): MenuItemConstructorOptions[] {
   }
   if (update.kind === 'available') {
     return [
-      { label: `Download VoicePaste ${update.version}`, click: () => openDownloadPage() },
+      { label: `New version ${update.version}: how to update`, click: () => showUpdatePanel() },
       { type: 'separator' },
     ];
   }
@@ -1166,15 +1167,29 @@ function getTrayUpdateItems(): MenuItemConstructorOptions[] {
 
 function handleUpdateStatusChange(update: UpdateStatus) {
   updateTrayMenu();
-  // macOS can't self-update unsigned: tell the user once where to get it.
+  // macOS can't self-update unsigned: tell the user once, and walk them
+  // through it in the app (right zip for their chip, three steps).
   if (update.kind === 'available' && Notification.isSupported()) {
+    const dutch = config.uiLanguage === 'nl';
     const notification = new Notification({
       title: 'VoicePaste',
-      body: `Version ${update.version} is available. Click to download.`,
+      body: dutch
+        ? `Versie ${update.version} staat klaar. Klik om bij te werken.`
+        : `Version ${update.version} is ready. Click to update.`,
     });
-    notification.on('click', () => openDownloadPage());
+    notification.on('click', () => showUpdatePanel());
     notification.show();
   }
+}
+
+function showUpdatePanel() {
+  const update = getUpdateStatus();
+  if (update.kind !== 'available' || !mainWindow) {
+    openDownloadPage();
+    return;
+  }
+  handleShowControlWindow('update-available');
+  mainWindow.webContents.send('showUpdate', { version: update.version, downloadUrl: update.downloadUrl });
 }
 
 function updateTrayMenu() {
@@ -2069,6 +2084,11 @@ function setupIpcHandlers() {
     if (!settingsWindowExpanded) {
       settingsWindowDeveloperMode = false;
     }
+    resizeMainWindowForSettings();
+  });
+
+  ipcMain.on('setUpdatePanelOpen', (_event, isOpen: boolean) => {
+    updatePanelOpen = Boolean(isOpen);
     resizeMainWindowForSettings();
   });
 

@@ -23,8 +23,8 @@ export type UpdateStatus =
   | { kind: 'none' }
   /** Windows: downloaded, waiting for a quiet moment (or the tray item). */
   | { kind: 'ready'; version: string }
-  /** macOS: a newer version exists on the download page. */
-  | { kind: 'available'; version: string };
+  /** macOS: a newer version exists; downloadUrl is the zip for this Mac's chip. */
+  | { kind: 'available'; version: string; downloadUrl: string };
 
 export interface UpdaterHooks {
   logger: Logger;
@@ -69,7 +69,9 @@ export function startUpdater(updaterHooks: UpdaterHooks): void {
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     logger.info('Update available', { version: info.version });
     if (process.platform === 'darwin') {
-      setStatus({ kind: 'available', version: info.version });
+      const downloadUrl = macDownloadUrl(info, process.arch);
+      logger.info('Mac update offered', { version: info.version, downloadUrl });
+      setStatus({ kind: 'available', version: info.version, downloadUrl });
     }
   });
   // One line per check (every 6 h) so the log shows the updater is alive.
@@ -118,6 +120,20 @@ export function installUpdateNow(reason: string): void {
   hooks.beforeInstall();
   // Silent install, then start the new version again.
   autoUpdater.quitAndInstall(true, true);
+}
+
+/**
+ * The zip for this Mac, straight from the release: the release page lists
+ * seven files and a user shouldn't have to know which chip they have.
+ */
+export function macDownloadUrl(info: Pick<UpdateInfo, 'version' | 'files'>, arch: string): string {
+  const zips = (info.files ?? []).map((file) => file.url).filter((url) => url.endsWith('.zip'));
+  const wantArm = arch === 'arm64';
+  const match = zips.find((url) => url.includes('arm64') === wantArm);
+  if (!match) {
+    return RELEASES_URL;
+  }
+  return `https://github.com/joshmarketingnl/VoicePaste/releases/download/v${info.version}/${match}`;
 }
 
 export function openDownloadPage(): void {

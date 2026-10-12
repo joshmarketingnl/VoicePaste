@@ -1,0 +1,93 @@
+name: mac-update-check
+
+# Proves the macOS update notice end to end on a clean Mac: an isolated test
+# build (own appId and settings, version 9.9.1) checks a local feed that
+# offers 9.9.2 and must offer the zip for this Mac's chip. Unsigned builds
+# can't install themselves on macOS, so "offered" is the success state.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/main/updater.ts'
+      - 'src/main/main.ts'
+      - 'scripts/update-test.config.cjs'
+      - 'package.json'
+      - '.github/workflows/mac-update-check.yml'
+
+jobs:
+  update-notice:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build app
+        run: |
+          # The test never starts the speech engine; electron-builder only
+          # needs the folder to exist.
+          mkdir -p resources/engine/darwin-arm64 resources/engine/darwin-x64
+          npm run build
+
+      - name: Build test versions 9.9.1 and 9.9.2
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          VP_OUT: ${{ runner.temp }}/updtest
+        run: |
+          for v in 9.9.1 9.9.2; do
+            VP_TEST_VERSION=$v npx electron-builder --mac zip --arm64 --publish never --config scripts/update-test.config.cjs
+          done
+          ls -la "$VP_OUT"/release-9.9.2
+
+      - name: Serve 9.9.2 as the update feed
+        run: |
+          mkdir -p "$RUNNER_TEMP/feed"
+          cp "$RUNNER_TEMP"/updtest/release-9.9.2/latest-mac.yml "$RUNNER_TEMP"/updtest/release-9.9.2/*.zip "$RUNNER_TEMP/feed/"
+          cat "$RUNNER_TEMP/feed/latest-mac.yml"
+          nohup python3 -m http.server 8899 --bind 127.0.0.1 --directory "$RUNNER_TEMP/feed" > "$RUNNER_TEMP/feed.log" 2>&1 &
+          sleep 2
+          curl -sf http://127.0.0.1:8899/latest-mac.yml > /dev/null
+
+      - name: Start 9.9.1 with saved settings and wait for the update notice
+        run: |
+          # Settings as a user would have them, with an API key, so no engine starts.
+          DATA="$HOME/Library/Application Support/voicepaste-updtest"
+          mkdir -p "$DATA"
+          cat > "$DATA/config.json" <<'JSON'
+          {"engine":"openai","apiKey":"sk-test-0000","uiLanguage":"nl","languageMode":"nl-en"}
+          JSON
+          BEFORE=$(shasum -a 256 "$DATA/config.json" | cut -c1-16)
+
+          cd "$RUNNER_TEMP" && unzip -q updtest/release-9.9.1/*.zip -d app911
+          APP=$(find app911 -maxdepth 1 -name '*.app' | head -1)
+          VOICEPASTE_UPDATE_FIRST_CHECK_MS=3000 "$APP/Contents/MacOS/VoicePasteUpdTest" > "$RUNNER_TEMP/app.out" 2>&1 &
+
+          LOG="$DATA/logs/app.log"
+          for i in $(seq 1 60); do
+            if grep -q 'Mac update offered' "$LOG" 2>/dev/null; then break; fi
+            sleep 2
+          done
+          echo "--- app.log ---"; cat "$LOG" || true
+          grep 'Mac update offered' "$LOG" | grep -q '"version":"9.9.2"'
+          grep 'Mac update offered' "$LOG" | grep -q 'arm64-mac.zip'
+          AFTER=$(shasum -a 256 "$DATA/config.json" | cut -c1-16)
+          echo "config.json before $BEFORE after $AFTER"
+          test "$BEFORE" = "$AFTER"
+          echo "OK: 9.9.1 offered 9.9.2 with the arm64 zip; settings untouched"
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-update-check-log
+          path: |
+            ~/Library/Application Support/voicepaste-updtest/logs/app.log
+            ${{ runner.temp }}/app.out
+          if-no-files-found: ignore

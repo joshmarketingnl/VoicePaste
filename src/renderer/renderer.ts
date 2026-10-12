@@ -68,6 +68,13 @@ const languageModeOptionNlEn = document.getElementById('languageModeOptionNlEn')
 const languageModeOptionNl = document.getElementById('languageModeOptionNl') as HTMLOptionElement;
 const languageModeOptionEn = document.getElementById('languageModeOptionEn') as HTMLOptionElement;
 const languageModeOptionEs = document.getElementById('languageModeOptionEs') as HTMLOptionElement;
+const updatePanel = document.getElementById('updatePanel') as HTMLElement;
+const updateTitle = document.getElementById('updateTitle') as HTMLElement;
+const updateIntro = document.getElementById('updateIntro') as HTMLElement;
+const updateSteps = [1, 2, 3].map((n) => document.getElementById(`updateStep${n}`) as HTMLElement);
+const updatePermissions = document.getElementById('updatePermissions') as HTMLElement;
+const updateLaterButton = document.getElementById('updateLaterButton') as HTMLButtonElement;
+const updateDownloadButton = document.getElementById('updateDownloadButton') as HTMLButtonElement;
 const developerProviderField = document.getElementById('developerProviderField') as HTMLElement;
 const developerModelField = document.getElementById('developerModelField') as HTMLElement;
 const providerCodeLabel = document.getElementById('providerCodeLabel') as HTMLElement;
@@ -227,6 +234,14 @@ const UI_TEXT: Record<
     engineHint: Record<'local' | 'openai' | 'custom', string>;
     languageModeLabel: string;
     languageModeOptions: Record<LanguageMode, string>;
+    update: {
+      title: (version: string) => string;
+      intro: string;
+      steps: [string, string, string];
+      permissions: string;
+      later: string;
+      download: string;
+    };
     providerCode: string;
     modelCode: string;
     openAiApiKey: string;
@@ -277,6 +292,19 @@ const UI_TEXT: Record<
       local: 'Runs on your device — nothing to start, no API key, works offline.',
       openai: 'Uses the OpenAI cloud API (an API key is required).',
       custom: 'Send audio to your own OpenAI-compatible endpoint.',
+    },
+    update: {
+      title: (version) => `VoicePaste ${version} is ready`,
+      intro: 'On a Mac you install the new version yourself. It takes about a minute and your settings stay.',
+      steps: [
+        'Click Download. The right file for your Mac is picked for you.',
+        'Open the zip in Downloads and drag VoicePaste to Applications. Choose Replace.',
+        'Open VoicePaste. If macOS blocks it: System Settings, Privacy & Security, Open Anyway.',
+      ],
+      permissions:
+        'Does pasting or the microphone stop working afterwards? Switch VoicePaste off and on again under Privacy & Security, Accessibility and Microphone.',
+      later: 'Later',
+      download: 'Download',
     },
     languageModeLabel: 'Spoken language',
     languageModeOptions: {
@@ -334,6 +362,19 @@ const UI_TEXT: Record<
       local: 'Draait op je apparaat — niets te starten, geen API-sleutel, werkt offline.',
       openai: 'Gebruikt de OpenAI cloud-API (API-sleutel vereist).',
       custom: 'Stuurt audio naar je eigen OpenAI-compatibele endpoint.',
+    },
+    update: {
+      title: (version) => `VoicePaste ${version} staat klaar`,
+      intro: 'Op een Mac installeer je de nieuwe versie zelf. Dat duurt ongeveer een minuut en je instellingen blijven staan.',
+      steps: [
+        'Klik op Download. Het juiste bestand voor jouw Mac wordt vanzelf gekozen.',
+        "Open het zip-bestand in Downloads en sleep VoicePaste naar Programma's. Kies Vervang.",
+        'Open VoicePaste. Houdt macOS hem tegen: Systeeminstellingen, Privacy en beveiliging, Open toch.',
+      ],
+      permissions:
+        'Werkt plakken of de microfoon daarna niet meer? Zet VoicePaste uit en weer aan onder Privacy en beveiliging, bij Toegankelijkheid en Microfoon.',
+      later: 'Later',
+      download: 'Download',
     },
     languageModeLabel: 'Gesproken taal',
     languageModeOptions: {
@@ -1199,6 +1240,45 @@ window.voicepaste.onCommandCancel(() => {
 
 window.voicepaste.onOpenSettingsPanel(() => {
   void openSettingsPanel();
+});
+
+let pendingUpdate: { version: string; downloadUrl: string } | null = null;
+
+function renderUpdatePanel() {
+  if (!pendingUpdate) {
+    return;
+  }
+  const text = getUiText().update;
+  updateTitle.textContent = text.title(pendingUpdate.version);
+  updateIntro.textContent = text.intro;
+  text.steps.forEach((step, i) => {
+    updateSteps[i].textContent = step;
+  });
+  updatePermissions.textContent = text.permissions;
+  updateLaterButton.textContent = text.later;
+  updateDownloadButton.textContent = text.download;
+}
+
+window.voicepaste.onShowUpdate(async (info) => {
+  pendingUpdate = info;
+  if (isSettingsOpen) {
+    closeSettingsPanel();
+  }
+  await loadSettingsIfNeeded();
+  renderUpdatePanel();
+  updatePanel.hidden = false;
+  window.voicepaste.setUpdatePanelOpen(true);
+});
+
+updateLaterButton.addEventListener('click', () => {
+  updatePanel.hidden = true;
+  window.voicepaste.setUpdatePanelOpen(false);
+});
+
+updateDownloadButton.addEventListener('click', () => {
+  if (pendingUpdate) {
+    void window.voicepaste.openExternalUrl(pendingUpdate.downloadUrl);
+  }
 });
 
 window.voicepaste.onStateUpdate((data: { state: string; message?: string; preview?: string }) => {
